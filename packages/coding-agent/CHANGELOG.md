@@ -81,6 +81,7 @@
 - The `edit` tool in `replace` mode and the `grep`, `find` and `bash` tools now carry worked call examples in their descriptions
 ### Fixed
 
+- Fixed SDK embedders leaking every disposed `AgentSession` that owned its MCP manager, so long-lived processes that create and dispose many sessions grew memory without bound
 - Fixed large session files ending in a truncated record not being repaired on load, unlike small ones
 - Fixed a rewritten session file being published with a partial transcript when a backpressured streamed write failed; every write is now confirmed before the file replaces the old one
 - Fixed thin images (toolbar crops, narrow strips) reaching the model with a short edge below the vision minimum: they are now padded to the floor without stretching their content, and read and screenshot notes explain how to map padded coordinates back to the source
