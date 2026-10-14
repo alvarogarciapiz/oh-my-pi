@@ -80,6 +80,7 @@
 - The `edit` tool in `replace` mode and the `grep`, `find` and `bash` tools now carry worked call examples in their descriptions
 ### Fixed
 
+- Fixed project discovery walking up from a temporary directory (`/tmp`) or another user's home and loading their `.omp`/`AGENTS.md` config: project walks now stop at temporary roots and foreign user config roots
 - Fixed `/memory clear` in one project deleting the memory state of every other project that shares the same agent directory
 - Fixed the models config migration writing `models.yml` readable by other users and dropping every custom provider when the write was interrupted; the migrated file is now published atomically with owner-only permissions
 - Fixed the plugin lockfile being written readable by other users on the machine; it is now created with owner-only (0600) permissions
