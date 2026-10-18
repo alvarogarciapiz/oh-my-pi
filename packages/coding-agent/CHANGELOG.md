@@ -82,6 +82,7 @@
 - The `edit` tool in `replace` mode and the `grep`, `find` and `bash` tools now carry worked call examples in their descriptions
 ### Fixed
 
+- Fixed subagents that were cancelled, interrupted, timed out, or killed refusing messages as hard-aborted; a message or Agent Hub revive now resumes them from their transcript (upstream ae29413e87)
 - Fixed a task worker messaged while still starting up running without its `tasks[].task` assignment; the message now waits for the assignment's turn (upstream b3baadf2a3)
 - Fixed task job deliveries naming `agent://<job-id>`/`history://<job-id>` for jobs whose id is not the agent id, and offering `agent://` for turns that published no output (upstream #17112)
 - Fixed `proc://<agent>` not finding a woken subagent's running job when its turn ran under a suffixed job id (upstream #17020)
