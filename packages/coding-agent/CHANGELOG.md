@@ -82,6 +82,7 @@
 - The `edit` tool in `replace` mode and the `grep`, `find` and `bash` tools now carry worked call examples in their descriptions
 ### Fixed
 
+- Fixed every idle agent woken by an `agent://all` broadcast answering the sender automatically; a direct message still gets the woken agent's turn back (upstream #16312)
 - Fixed `wait` failing with "Skipped due to a queued background completion" when the job it was waiting for had just finished (upstream #16301)
 - An automatic retry fallback hop no longer re-renders the system prompt for the new model (it rebuilds only for a different edit mode or tool-description handling), and a live subagent rebuild keeps the peer list its prompt showed until the rest of the prompt changes, so the provider prompt cache survives (upstream #17014)
 - Waking a parked subagent no longer re-sends its whole conversation without the prompt cache when other agents started, finished or parked meanwhile: the revive renders the peer roster its prompt last held (upstream #16369)
