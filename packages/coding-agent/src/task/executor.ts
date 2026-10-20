@@ -3689,6 +3689,12 @@ interface SubagentPromptInputs {
 	forkSystemPrompt?: string[];
 	/** Ask the child to cite its numbered tool receipts (`task.receipts.enabled`). */
 	receiptsEnabled: boolean;
+	/** Peer roster each prompt block the live session rendered shows, keyed by that block. */
+	ircRenders: Map<string, IrcPeerRosterData>;
+	/** Peer roster of the prompt the parked session held; a warm revive renders it again. */
+	ircRoster?: IrcPeerRosterData;
+	/** Set while a warm revive rebuilds the session. */
+	reviving: boolean;
 }
 
 /**
@@ -3721,12 +3727,26 @@ function explicitSubagentToolNames(spec: SubagentSessionSpec): ReadonlySet<strin
 	return new Set((spec.options.customTools ?? []).map(tool => tool.name));
 }
 
-/** Render the subagent role/context block (agent prompt, context, plan, worktree, schema, IRC roster). */
-function renderSubagentPrompt(inputs: SubagentPromptInputs, launch?: SubagentLaunchInputs): string {
-	const ircRoster = inputs.ircEnabled
-		? collectIrcPeerRoster(AgentRegistry.global(), inputs.id, inputs.ircRoot.sessionFile)
-		: undefined;
-	return prompt.render(subagentSystemPromptTemplate, {
+/**
+ * Render the subagent role/context block (agent prompt, context, plan, worktree, schema, IRC roster).
+ * With `defaultPrompt` the block is a system prompt block: a warm revive shows the roster the parked
+ * session's prompt held, and each render records the roster it shows. Without it (a fork's role block
+ * riding the first user message) the roster is collected live.
+ */
+function renderSubagentPrompt(
+	inputs: SubagentPromptInputs,
+	launch?: SubagentLaunchInputs,
+	defaultPrompt?: readonly string[],
+): string {
+	// A revive shows the roster the parked session's prompt held, as the cached prompt prefix
+	// does: a live one would make every revival a cache miss for a change it would not have
+	// seen had it stayed live.
+	const ircRoster = !inputs.ircEnabled
+		? undefined
+		: defaultPrompt && inputs.reviving && inputs.ircRoster
+			? inputs.ircRoster
+			: collectIrcPeerRoster(AgentRegistry.global(), inputs.id, inputs.ircRoot.sessionFile);
+	const block = prompt.render(subagentSystemPromptTemplate, {
 		agent: inputs.agentSystemPrompt,
 		context: inputs.context,
 		planReference: inputs.planReference,
@@ -3745,6 +3765,8 @@ function renderSubagentPrompt(inputs: SubagentPromptInputs, launch?: SubagentLau
 		ircSelfId: inputs.ircEnabled ? inputs.id : "",
 		receiptsEnabled: inputs.receiptsEnabled,
 	});
+	if (defaultPrompt && ircRoster) recordIrcRender(inputs, block, ircRoster);
+	return block;
 }
 
 function buildSubagentSessionOptions(
@@ -3777,8 +3799,33 @@ function buildSubagentSessionOptions(
 					// Per-spawn text (context, worktree, IRC roster) goes after the trailing
 					// `<project-context>` block so spawns of the same agent share the static
 					// prompt prefix as a cache hit.
-					[...defaultPrompt, renderSubagentPrompt(inputs, launch)],
+					[...defaultPrompt, renderSubagentPrompt(inputs, launch, defaultPrompt)],
 	};
+}
+
+/** Remembers the roster `block` shows, dropping blocks the live session's base prompt no longer holds. */
+function recordIrcRender(inputs: SubagentPromptInputs, block: string, roster: IrcPeerRosterData): void {
+	const held = AgentRegistry.global().get(inputs.id)?.session?.baseSystemPrompt;
+	if (held) {
+		for (const rendered of inputs.ircRenders.keys()) {
+			if (!held.includes(rendered)) inputs.ircRenders.delete(rendered);
+		}
+	}
+	inputs.ircRenders.set(block, roster);
+}
+
+/**
+ * When `session` is disposed, keeps the roster its base prompt held for the next warm revive to
+ * render again. The base, not the effective prompt: a `before_agent_start` override may rewrite
+ * the block, and the revived turn re-runs that hook over the same base.
+ */
+function trackSubagentIrcRoster(session: AgentSession, inputs: SubagentPromptInputs): void {
+	session.addDisposer(() => {
+		inputs.ircRoster = session.baseSystemPrompt
+			.map(block => inputs.ircRenders.get(block))
+			.find(roster => roster !== undefined);
+		inputs.ircRenders.clear();
+	});
 }
 
 /** Re-resolves the IRC roster root a subagent's prompt scopes its peer rows to. */
@@ -3868,32 +3915,38 @@ function createWarmSubagentReviver(capture: WarmReviveCapture): AgentReviver {
 		// Account pools are owner policy: take the live exact-name entry, as
 		// dispatch and persisted revival do, never the spawn-time copy.
 		const agentAccountPools = validateAgentAccountPools(cfgTaskAgentAccountPools.get(capture.settings.parent));
+		capture.spec.prompt.reviving = true;
 		try {
-			({ session: revived } = await createAgentSession({
-				...buildSubagentSessionOptions(
-					capture.spec,
-					restoreSubagentSettings(capture.settings),
-					reopened,
-					expectedAgentRef,
-				),
-				oauthAccountPools: Object.hasOwn(agentAccountPools, capture.agentName)
-					? agentAccountPools[capture.agentName]
-					: undefined,
-			}));
-		} catch (error) {
-			mcpFollower?.dispose();
-			throw error;
+			try {
+				({ session: revived } = await createAgentSession({
+					...buildSubagentSessionOptions(
+						capture.spec,
+						restoreSubagentSettings(capture.settings),
+						reopened,
+						expectedAgentRef,
+					),
+					oauthAccountPools: Object.hasOwn(agentAccountPools, capture.agentName)
+						? agentAccountPools[capture.agentName]
+						: undefined,
+				}));
+			} catch (error) {
+				mcpFollower?.dispose();
+				throw error;
+			}
+			mcpFollower?.bind(revived);
+			trackSubagentSettings(revived, capture);
+			trackSubagentIrcRoster(revived, capture.spec.prompt);
+			// Re-run the executor's extension wiring on the rebuilt session. Skipping it leaves the
+			// runner pre-init, so a `tool_call` handler touching a runtime action trips the
+			// fail-closed gate and blocks every tool (including `yield`) in the revived agent (issue #8824).
+			await initializeExtensions(revived, {
+				reportSendError: (action, err) => logger.error("Extension send failed", { action, error: err.message }),
+				reportRuntimeError: err => logger.error("Extension error", { path: err.extensionPath, error: err.error }),
+				filterActiveTools: toolNames => (capture.keepTodo ? toolNames : toolNames.filter(name => name !== "todo")),
+			});
+		} finally {
+			capture.spec.prompt.reviving = false;
 		}
-		mcpFollower?.bind(revived);
-		trackSubagentSettings(revived, capture);
-		// Re-run the executor's extension wiring on the rebuilt session. Skipping it leaves the
-		// runner pre-init, so a `tool_call` handler touching a runtime action trips the
-		// fail-closed gate and blocks every tool (including `yield`) in the revived agent (issue #8824).
-		await initializeExtensions(revived, {
-			reportSendError: (action, err) => logger.error("Extension send failed", { action, error: err.message }),
-			reportRuntimeError: err => logger.error("Extension error", { path: err.extensionPath, error: err.error }),
-			filterActiveTools: toolNames => (capture.keepTodo ? toolNames : toolNames.filter(name => name !== "todo")),
-		});
 		AgentRegistry.global().syncSessionStatus(id, revived);
 		attachIrcWakeTurnMonitor(revived, capture.wake);
 		return revived;
@@ -4486,6 +4539,8 @@ export async function runSubprocess(options: ExecutorOptions): Promise<SingleRes
 					ircRoot: {},
 					forkSystemPrompt: forkSource?.systemPrompt,
 					receiptsEnabled: cfgTaskReceiptsEnabled.get(settings),
+					ircRenders: new Map(),
+					reviving: false,
 				},
 			};
 
@@ -4582,6 +4637,7 @@ export async function runSubprocess(options: ExecutorOptions): Promise<SingleRes
 					agentName: agent.name,
 				};
 				trackSubagentSettings(session, reviveCapture);
+				trackSubagentIrcRoster(session, sessionSpec.prompt);
 				reviveSession = createWarmSubagentReviver(reviveCapture);
 			}
 

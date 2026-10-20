@@ -82,6 +82,7 @@
 - The `edit` tool in `replace` mode and the `grep`, `find` and `bash` tools now carry worked call examples in their descriptions
 ### Fixed
 
+- Waking a parked subagent no longer re-sends its whole conversation without the prompt cache when other agents started, finished or parked meanwhile: the revive renders the peer roster its prompt last held (upstream #16369)
 - Forks of a compacted session now keep the eval runtime context: the eval state snapshot is persisted at compaction boundaries and reused on session rebuilds (upstream #15695)
 - A settings reload that brings a value this build cannot read (such as an `edit.mode` written by a newer omp) now keeps that setting's last good value instead of falling back to the default, while the rest of the edit applies
 - Fixed a failed streamed edit preview ending the whole run without retry: the harness now re-drives the turn with the preview diagnostic so the model can read the file again and correct the patch, and gives up with a notice only after two recoveries
