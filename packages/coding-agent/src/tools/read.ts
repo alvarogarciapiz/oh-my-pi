@@ -2348,48 +2348,81 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 					const requestedStart = offset ? Math.max(0, offset - 1) : 0;
 					const expandStart = !rawSelector && offset !== undefined && offset > 1;
 					const expandEnd = !rawSelector && limit !== undefined;
-					const leadingContext = expandStart ? Math.min(requestedStart, RANGE_LEADING_CONTEXT_LINES) : 0;
+					let leadingContext = expandStart ? Math.min(requestedStart, RANGE_LEADING_CONTEXT_LINES) : 0;
 					const trailingContext = expandEnd ? RANGE_TRAILING_CONTEXT_LINES : 0;
-					const startLine = requestedStart - leadingContext;
-					const startLineDisplay = startLine + 1;
+					let startLine = requestedStart - leadingContext;
+					let startLineDisplay = startLine + 1;
 
 					const DEFAULT_LIMIT = this.#defaultLimit;
 					const effectiveLimit = limit ?? DEFAULT_LIMIT;
-					const maxLinesToCollect = Math.min(effectiveLimit + leadingContext + trailingContext, DEFAULT_MAX_LINES);
-					const selectedLineLimit = effectiveLimit + leadingContext + trailingContext;
+					let maxLinesToCollect = Math.min(effectiveLimit + leadingContext + trailingContext, DEFAULT_MAX_LINES);
+					let selectedLineLimit = effectiveLimit + leadingContext + trailingContext;
 					// Scale byte budget with line limit so the configured line count actually fits.
 					// Assume ~512 bytes/line average; never go below the shared default.
-					const maxBytesForRead = Math.max(DEFAULT_MAX_BYTES, maxLinesToCollect * 512);
+					let maxBytesForRead = Math.max(DEFAULT_MAX_BYTES, maxLinesToCollect * 512);
 					// Per-line column cap. Skipped in raw mode so `:raw` always returns
 					// verbatim bytes for paste-back-into-tool workflows. Numbered pages
 					// charge a cut line its capped width, so the budget bounds what is shown.
 					const maxColumns = resolveOutputMaxColumns(this.session.settings);
 					const displayColumns = rawSelector ? 0 : maxColumns;
-
-					const lineWindow = buffered
-						? collectLineWindowFromBuffer(
-								buffered,
-								startLine,
-								maxLinesToCollect,
-								maxBytesForRead,
-								selectedLineLimit,
-								rawSelector,
-								displayColumns,
-							)
-						: await streamLinesFromFile(
-								absolutePath,
-								startLine,
-								maxLinesToCollect,
-								maxBytesForRead,
-								selectedLineLimit,
-								undefined, // plain-file read: deterministic and fast, never abort mid-read
-								{
-									includeTerminalNewline: rawSelector,
-									stopScanAfterCollect: fileSize > SNAPSHOT_MAX_BYTES,
-									seek: tailSeekTo?.(startLine),
+					const collectWindow = async (
+						firstLine: number,
+						lineCount: number,
+						maxBytes: number,
+						selectedLimit: number,
+					): Promise<ReadLineWindow> =>
+						buffered
+							? collectLineWindowFromBuffer(
+									buffered,
+									firstLine,
+									lineCount,
+									maxBytes,
+									selectedLimit,
+									rawSelector,
 									displayColumns,
-								},
-							);
+								)
+							: await streamLinesFromFile(
+									absolutePath,
+									firstLine,
+									lineCount,
+									maxBytes,
+									selectedLimit,
+									undefined, // plain-file read: deterministic and fast, never abort mid-read
+									{
+										includeTerminalNewline: rawSelector,
+										stopScanAfterCollect: fileSize > SNAPSHOT_MAX_BYTES,
+										seek: tailSeekTo?.(firstLine),
+										displayColumns,
+									},
+								);
+
+					let lineWindow = await collectWindow(startLine, maxLinesToCollect, maxBytesForRead, selectedLineLimit);
+
+					// Leading context is optional padding. If the byte budget stopped
+					// before any requested line, retry from the requested start so an
+					// oversized context line cannot hide the page that was asked for.
+					// When the context itself fit (a cut wide line can), keep it unless
+					// the retry shows the requested line: a requested line too large
+					// alone keeps its "could not fit after preceding context" notice.
+					if (leadingContext > 0 && lineWindow.stoppedByByteLimit && lineWindow.lines.length <= leadingContext) {
+						const retryLinesToCollect = Math.min(effectiveLimit + trailingContext, DEFAULT_MAX_LINES);
+						const retryBytes = Math.max(DEFAULT_MAX_BYTES, retryLinesToCollect * 512);
+						const retryWindow = await collectWindow(
+							requestedStart,
+							retryLinesToCollect,
+							retryBytes,
+							effectiveLimit + trailingContext,
+						);
+						if (lineWindow.lines.length < leadingContext || retryWindow.lines.length > 0) {
+							leadingContext = 0;
+							startLine = requestedStart;
+							startLineDisplay = startLine + 1;
+							maxLinesToCollect = retryLinesToCollect;
+							selectedLineLimit = effectiveLimit + trailingContext;
+							maxBytesForRead = retryBytes;
+							lineWindow = retryWindow;
+						}
+					}
 
 					const {
 						lines: collectedLines,

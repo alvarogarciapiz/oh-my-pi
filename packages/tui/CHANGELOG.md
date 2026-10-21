@@ -12,6 +12,7 @@
 - Added the `answerDivider` transcript display preference: a reply with text and no tool calls draws a centered rule above its text while it streams when it thought first or follows other transcript blocks (`TranscriptPredecessorAware`), and drops it if a tool call follows; a settled reply keeps it only on `stop`. While it is on, reply text no longer publishes stable rows mid-stream
 - Added `IrcMessage.broadcast`, set on each copy of an `agent://all` broadcast so recipients can tell it from a direct message (upstream #16312)
 - Added `modelEnds` to `GroupedFileSection`: per file, the model-line index just past its last line, so a caller cutting the output can tell which files it shows whole (upstream #16594)
+- Added `isColumnTruncationNotice` to `tools/output-meta`, matching the `[Some lines truncated to …]` notice that `formatOutputNotice` emits (upstream #16595)
 
 ### Fixed
 

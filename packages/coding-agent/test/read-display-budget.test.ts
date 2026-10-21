@@ -7,7 +7,7 @@ import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import type { ToolSession } from "@oh-my-pi/pi-coding-agent/tools";
 import { ReadTool, SNAPSHOT_MAX_BYTES } from "@oh-my-pi/pi-coding-agent/tools/read";
 import { wrapToolWithMetaNotice } from "@oh-my-pi/pi-coding-agent/tools/output-meta";
-import { cfgToolsOutputMaxColumns } from "@oh-my-pi/pi-coding-agent/tools/settings";
+import { cfgToolsArtifactSpillThreshold, cfgToolsOutputMaxColumns } from "@oh-my-pi/pi-coding-agent/tools/settings";
 import { removeWithRetries } from "@oh-my-pi/pi-utils";
 
 const WIDE_LINE = "H".repeat(80_000);
@@ -130,5 +130,21 @@ describe("read charges column-cut lines their displayed width", () => {
 		expect(text).toStartWith("H".repeat(40_000));
 		expect(text).not.toContain("…");
 		expect(text).toContain("partial");
+	});
+
+	it("drops a cut context line that leaves no room for the requested line", async () => {
+		// Under a 50,500-column cap the 80 KB context line's cut display fits the 50 KB page budget
+		// alone, but not with line 2 after it.
+		const file = path.join(dir, "context.txt");
+		await fs.writeFile(file, `${WIDE_LINE}\n${"y".repeat(1_000)}\nr3\n`);
+		const shown = rows(await read(createSession(dir, 50_500), `${file}:2-2`));
+		expect(shown.get(2)).toBe("y".repeat(1_000));
+	});
+
+	it("drops a context line wider than the page budget when the column cap is off", async () => {
+		const file = path.join(dir, "context-raw.txt");
+		await fs.writeFile(file, `${WIDE_LINE}\nwanted\nr3\n`);
+		const shown = rows(await read(createSession(dir, 0), `${file}:2-2`));
+		expect(shown.get(2)).toBe("wanted");
 	});
 });
