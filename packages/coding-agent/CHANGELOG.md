@@ -84,6 +84,7 @@
 - `wait` no longer ends on an `agent://all` broadcast (it reaches the agent after the wait returns, without interrupting it), and jobs settling within 1.5 s of the first come back in one result (upstream adcb8800b6, without the reply-wait cap change)
 ### Fixed
 
+- Fixed `write` accepting a read projection whose long lines were shown cut at the column cap; writing it back now fails with `incomplete read projection` instead of truncating those lines (upstream 7dc946c9de, N-37)
 - Fixed `grep` and `glob` treating a `;` list that starts with an internal URL and names local files (`artifact://1;notes.txt`) as one URL; each target is now searched (upstream #531, N-40)
 - Fixed `read` pages ending early on files with lines wider than `tools.outputMaxColumns`: a column-cut line is now charged its displayed width against the page budget instead of its source size (upstream 3b04762106, N-40)
 - Fixed `grep` trimming a file to its first matches in a multi-file search without telling the agent; the result now names the trimmed files and how to see the rest (upstream #16594, N-40)
