@@ -79,6 +79,7 @@
 - The `edit` tool in `replace` mode and the `grep`, `find` and `bash` tools now carry worked call examples in their descriptions
 ### Fixed
 
+- Fixed `/memory clear` in one project deleting the memory state of every other project that shares the same agent directory
 - Fixed the models config migration writing `models.yml` readable by other users and dropping every custom provider when the write was interrupted; the migrated file is now published atomically with owner-only permissions
 - Fixed the plugin lockfile being written readable by other users on the machine; it is now created with owner-only (0600) permissions
 - Fixed the compiled `omp` binaries carrying CVE-2026-111497 (Brotli decoder out-of-bounds write) and CVE-2026-91403 (compromised eMudhra CAs still trusted): builds and CI now require Bun 1.4.4 or newer through the root `packageManager` floor
