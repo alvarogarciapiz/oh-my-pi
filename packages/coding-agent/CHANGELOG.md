@@ -84,6 +84,7 @@
 - `wait` no longer ends on an `agent://all` broadcast (it reaches the agent after the wait returns, without interrupting it), and jobs settling within 1.5 s of the first come back in one result (upstream adcb8800b6, without the reply-wait cap change)
 ### Fixed
 
+- Fixed `grep` trimming a file to its first matches in a multi-file search without telling the agent; the result now names the trimmed files and how to see the rest (upstream #16594, N-40)
 - Fixed `read` returning a file's old content when an earlier `bash` (or other writing) call in the same message changed it; the read now waits for those calls to settle (upstream 491f5f5b03, N-39)
 - Fixed a subagent's `yield` result reaching its parent as its reply to a peer message or `agent://all` broadcast that arrived as it finished; such messages now get a wake turn of their own after the result, and a peer that wrote directly still receives the reply (upstream #16583)
 - Fixed subagents that were cancelled, interrupted, timed out, or killed refusing messages as hard-aborted; a message or Agent Hub revive now resumes them from their transcript (upstream ae29413e87)
