@@ -79,6 +79,7 @@
 - The `edit` tool in `replace` mode and the `grep`, `find` and `bash` tools now carry worked call examples in their descriptions
 ### Fixed
 
+- Fixed the compiled `omp` binaries carrying CVE-2026-111497 (Brotli decoder out-of-bounds write) and CVE-2026-91403 (compromised eMudhra CAs still trusted): builds and CI now require Bun 1.4.4 or newer through the root `packageManager` floor
 - Fixed the system prompt claiming user content is sanitized: instructions found in tool output, web pages, fetched documents, MCP results and ordinary files are now treated as data, never obeyed
 - Fixed skill self-improvement silently dropping an edit when the curator sent several edits to one skill file in the same reply
 - Fixed the agent deleting production resources without confirmation on open-ended requests such as "clean up the old resources": it now lists the exact targets with evidence and asks first, while requests that name exact targets still run without confirmation
