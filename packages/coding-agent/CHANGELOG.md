@@ -82,6 +82,7 @@
 - The `edit` tool in `replace` mode and the `grep`, `find` and `bash` tools now carry worked call examples in their descriptions
 ### Fixed
 
+- Fixed `proc://<agent>` not finding a woken subagent's running job when its turn ran under a suffixed job id (upstream #17020)
 - Fixed a warm-revived subagent getting the parent-owned `todo` tool back (upstream #16281)
 - Fixed the second of two extension asides sent together to an idle session being lost (upstream #16292)
 - Fixed a subagent woken by an IRC message relaying every line of text it wrote that turn instead of just its final answer (upstream #16302)
