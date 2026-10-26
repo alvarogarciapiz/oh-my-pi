@@ -81,6 +81,7 @@
 - The `edit` tool in `replace` mode and the `grep`, `find` and `bash` tools now carry worked call examples in their descriptions
 ### Fixed
 
+- Fixed TTSR rule matching rescanning a long unterminated streamed line on every delta (quadratic in the line length); rescans are now paced and the final check still reports every match
 - Fixed bash commands hanging on `git rebase -i` when a config-file `sequence.editor` is set, and on Git Credential Manager GUI/browser auth dialogs: the bash tool now exports `GIT_SEQUENCE_EDITOR=true` and `GCM_INTERACTIVE=never`
 - Fixed project discovery walking up from a temporary directory (`/tmp`) or another user's home and loading their `.omp`/`AGENTS.md` config: project walks now stop at temporary roots and foreign user config roots
 - Fixed `/memory clear` in one project deleting the memory state of every other project that shares the same agent directory
