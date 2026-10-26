@@ -84,6 +84,7 @@
 - `wait` no longer ends on an `agent://all` broadcast (it reaches the agent after the wait returns, without interrupting it), and jobs settling within 1.5 s of the first come back in one result (upstream adcb8800b6, without the reply-wait cap change)
 ### Fixed
 
+- Fixed `write` replacing a CRLF or UTF-8 BOM file with LF text rewriting every line ending and dropping the BOM; it now keeps the replaced file's CRLF line endings and BOM, as `edit` does, and says so in its result (upstream #16575, N-37)
 - Fixed a `read` range whose leading context line is too wide for the page hiding the requested lines; the read now retries from the requested line, and `write` only treats a bracketed `[Some lines truncated to …]` line as the column-cap notice (upstream 1e479b58d7, N-37)
 - Fixed `write` accepting a read projection whose long lines were shown cut at the column cap; writing it back now fails with `incomplete read projection` instead of truncating those lines (upstream 7dc946c9de, N-37)
 - Fixed `grep` and `glob` treating a `;` list that starts with an internal URL and names local files (`artifact://1;notes.txt`) as one URL; each target is now searched (upstream #531, N-40)
