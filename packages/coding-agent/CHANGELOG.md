@@ -81,6 +81,7 @@
 - The `edit` tool in `replace` mode and the `grep`, `find` and `bash` tools now carry worked call examples in their descriptions
 ### Fixed
 
+- RPC sessions now report settled (`isSettled: true`, `session_settled`) after a turn whose failed `todo` call queued a reminder for the next prompt, instead of appearing busy until another prompt arrives
 - Fixed an interrupted prompt's late setup cleanup marking the next prompt idle early, allowing overlapping submissions and releasing sleep prevention mid-turn
 - Fixed background completions (subagent results, launch completions, asides) restarting a run the user stopped with Esc: they now fold into context until a later turn ends on its own, and an Esc that stopped nothing no longer suppresses later background wakes
 - Fixed `/session delete` from RPC/ACP hosts leaving the live agent attached to the deleted file: the session now switches to a new, resumable session before the file is deleted and reports the new session id and path
