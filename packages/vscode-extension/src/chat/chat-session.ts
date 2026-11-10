@@ -47,6 +47,11 @@ const NO_STATUS_TEXTS: ReadonlyMap<string, string> = new Map();
 export class ChatSession implements vscode.Disposable, HostView {
 	#host: AgentHost | undefined;
 	#hostSubscription: vscode.Disposable | undefined;
+	/**
+	 * The session file this view showed last. When the shown host reports another one
+	 * (a process that just started or switched sessions), the user is now looking at it: it is read.
+	 */
+	#shownSessionFile: string | undefined;
 	#webviewReady = false;
 	/** The session whose proposals the webview shows; `null` until first sent. */
 	#proposalsSessionFile: string | undefined | null = null;
@@ -150,14 +155,23 @@ export class ChatSession implements vscode.Disposable, HostView {
 		this.#host = host;
 		host.attach(this);
 		this.#hostSubscription = host.onDidChange(() => {
+			this.#markShownRead(host);
 			this.#postProposals(false);
 			this.#onDidChange.fire(this);
 		});
-		this.pool.seen(host.sessionFile);
+		this.#shownSessionFile = undefined;
+		this.#markShownRead(host);
 		if (this.#webviewReady) void host.replay(this).catch(error => this.log.appendLine(String(error)));
 		if (previous) this.pool.release(previous);
 		this.#postProposals(false);
 		this.#onDidChange.fire(this);
+	}
+
+	/** `host` (shown here) opened a session this view did not show yet: the user sees it, so it is no longer unread. */
+	#markShownRead(host: AgentHost): void {
+		if (host.sessionFile === this.#shownSessionFile) return;
+		this.#shownSessionFile = host.sessionFile;
+		this.pool.seen(host.sessionFile);
 	}
 
 	/**
@@ -201,7 +215,6 @@ export class ChatSession implements vscode.Disposable, HostView {
 		const noWorkspace = await isNoWorkspaceSession(sessionFile);
 		if (current && current.noWorkspace === noWorkspace && this.#ownsIdle(current)) {
 			await current.switchSession(sessionFile);
-			this.pool.seen(sessionFile);
 			return;
 		}
 		await this.open({ kind: "resume", sessionFile }, noWorkspace);
@@ -434,7 +447,7 @@ export class ChatSession implements vscode.Disposable, HostView {
 					lastPrompt: session.singlePrompt ? undefined : session.lastMessage,
 					firstPromptFull: session.firstMessageFull,
 					lastPromptFull: session.singlePrompt ? undefined : session.lastMessageFull,
-					modified: session.modified.getTime(),
+					lastReply: session.lastReply.getTime(),
 					created: session.created?.getTime(),
 					messages: session.messageCount,
 					messagesPartial: session.truncated,
@@ -500,6 +513,10 @@ export class ChatSession implements vscode.Disposable, HostView {
 			case "deleteSession":
 				await this.commands.deleteSession(request.path, request.label);
 				await this.#postSessions();
+				return;
+			case "markSessionUnread":
+				// The pool's activity change reaches every chat as `sessionActivity`.
+				this.pool.markUnread(request.path);
 				return;
 			case "attachFiles":
 				this.commands.attachFiles(this);

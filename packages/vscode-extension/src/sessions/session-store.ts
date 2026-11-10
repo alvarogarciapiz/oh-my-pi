@@ -26,7 +26,12 @@ export interface SessionSummary {
 	lastMessageFull?: string;
 	/** The first prompt is also the latest one: the session has a single prompt. */
 	singlePrompt: boolean;
-	modified: Date;
+	/**
+	 * When MarIA Code last replied (the latest assistant message); before any reply, when the
+	 * session started, else the file's mtime. Opening or renaming a chat writes to its file but
+	 * leaves this alone.
+	 */
+	lastReply: Date;
 	/** When the session started (its header's timestamp); absent for a file without a readable header. */
 	created?: Date;
 	/** User + assistant messages found in the scanned prefix; a lower bound for long sessions. */
@@ -71,7 +76,7 @@ export function relativeTime(date: Date): string {
 	return date.toLocaleDateString();
 }
 
-/** Sessions in `dir`, newest first; sessions without a single prompt are skipped. */
+/** Sessions in `dir`, latest reply first; sessions without a single prompt are skipped. */
 export async function listSessions(dir: string): Promise<SessionSummary[]> {
 	let names: string[];
 	try {
@@ -90,7 +95,7 @@ export async function listSessions(dir: string): Promise<SessionSummary[]> {
 				// A first prompt with an image can fill the whole prefix: its message is found later.
 				session !== undefined && (session.messageCount > 0 || session.firstMessage !== undefined),
 		)
-		.sort((a, b) => b.modified.getTime() - a.modified.getTime());
+		.sort((a, b) => b.lastReply.getTime() - a.lastReply.getTime());
 }
 
 async function readSummary(file: string): Promise<SessionSummary> {
@@ -107,7 +112,7 @@ async function readSummary(file: string): Promise<SessionSummary> {
 		const summary: SessionSummary = {
 			path: file,
 			id: path.basename(file, ".jsonl").split("_").pop() ?? "",
-			modified: stat.mtime,
+			lastReply: stat.mtime,
 			messageCount: 0,
 			truncated,
 			singlePrompt: false,
@@ -115,6 +120,7 @@ async function readSummary(file: string): Promise<SessionSummary> {
 		// Prompts are told apart by the byte offset of their line.
 		let firstOffset: number | undefined;
 		let last: PromptAt | undefined;
+		let lastReply: Date | undefined;
 		let offset = 0;
 		for (const line of lines) {
 			const lineOffset = offset;
@@ -137,6 +143,7 @@ async function readSummary(file: string): Promise<SessionSummary> {
 				const prompt = userPrompt(entry);
 				// Skill and collab prompts are custom messages that start a user turn.
 				if (role === "user" || role === "assistant" || prompt !== undefined) summary.messageCount++;
+				if (role === "assistant") lastReply = entryTime(entry) ?? lastReply;
 				if (prompt === undefined) continue;
 				if (firstOffset === undefined) {
 					firstOffset = lineOffset;
@@ -154,11 +161,14 @@ async function readSummary(file: string): Promise<SessionSummary> {
 				summary.firstMessage = first?.text;
 				summary.firstMessageFull = first?.full;
 			}
-			last = await findLastPrompt(handle, stat.size);
+			const tail = await findLastPromptAndReply(handle, stat.size);
+			last = tail.prompt;
+			lastReply = tail.reply ?? lastReply;
 		}
 		summary.lastMessage = last?.text;
 		summary.lastMessageFull = last?.full;
 		summary.singlePrompt = last !== undefined && last.offset === firstOffset;
+		summary.lastReply = lastReply ?? summary.created ?? stat.mtime;
 		return summary;
 	} finally {
 		await handle.close();
@@ -181,6 +191,8 @@ export interface SessionLine {
 		customType?: string;
 		attribution?: string;
 		details?: unknown;
+		/** Epoch ms when the message was made. */
+		timestamp?: number;
 	};
 }
 
@@ -228,6 +240,12 @@ function skillPromptText(details: unknown): string | undefined {
 	return field("__queueChipText") ?? field("prompt") ?? (name ? `/skill:${name}${args ? ` ${args}` : ""}` : args);
 }
 
+/** When a session entry was written: its own ISO timestamp, else its message's epoch ms; undefined when neither parses. */
+function entryTime(entry: SessionLine): Date | undefined {
+	const time = entry.timestamp ? new Date(entry.timestamp) : new Date(entry.message?.timestamp ?? Number.NaN);
+	return Number.isNaN(time.getTime()) ? undefined : time;
+}
+
 /** A user prompt in a line of the session file, or undefined (cheap check before parsing). */
 function promptInLine(line: string): Prompt | undefined {
 	if (!line.includes('"user"')) return undefined;
@@ -264,11 +282,16 @@ async function findFirstPrompt(handle: fs.FileHandle, size: number): Promise<Pro
 }
 
 /**
- * The latest prompt of a file too long to read whole: lines are read
- * backwards from the end, up to {@link MAX_TAIL_BYTES}, and only lines that
- * can be a user message are parsed.
+ * The latest prompt and the latest reply's time of a file too long to read
+ * whole: lines are read backwards from the end, up to {@link MAX_TAIL_BYTES},
+ * until both turn up; only lines that can be a user or assistant message are parsed.
  */
-async function findLastPrompt(handle: fs.FileHandle, size: number): Promise<PromptAt | undefined> {
+async function findLastPromptAndReply(
+	handle: fs.FileHandle,
+	size: number,
+): Promise<{ prompt?: PromptAt; reply?: Date }> {
+	let prompt: PromptAt | undefined;
+	let reply: Date | undefined;
 	let end = size;
 	/** Bytes of a line cut by the previous chunk's start, joined with the next chunk read. */
 	let carry = Buffer.alloc(0);
@@ -291,12 +314,23 @@ async function findLastPrompt(handle: fs.FileHandle, size: number): Promise<Prom
 			const lineStart = Math.max(newline + 1, firstNewline + 1);
 			const line = data.subarray(lineStart, lineEnd).toString("utf8");
 			lineEnd = lineStart - 1;
-			const prompt = promptInLine(line);
-			if (prompt !== undefined) return { offset: start + lineStart, ...prompt };
+			if (prompt === undefined) {
+				const found = promptInLine(line);
+				if (found !== undefined) prompt = { offset: start + lineStart, ...found };
+			}
+			if (reply === undefined && line.includes('"assistant"')) {
+				try {
+					const entry: SessionLine = JSON.parse(line);
+					if (entry.type === "message" && entry.message?.role === "assistant") reply = entryTime(entry);
+				} catch {
+					// A line cut by a concurrent write: an earlier reply will do.
+				}
+			}
+			if (prompt !== undefined && reply !== undefined) return { prompt, reply };
 		}
 		end = start;
 	}
-	return undefined;
+	return { prompt, reply };
 }
 
 /**

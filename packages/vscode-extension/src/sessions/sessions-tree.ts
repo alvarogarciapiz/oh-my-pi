@@ -3,14 +3,14 @@ import * as vscode from "vscode";
 import type { SessionActivity } from "../protocol";
 import { type SessionSummary, listSessions, relativeTime, sessionLabel } from "./session-store";
 
-/** Icon per activity: a spinner while the session works, a green dot once it finished unseen. */
+/** Icon per activity: a spinner while the session works, a green dot while it is unread. */
 const ACTIVITY_ICONS: Record<SessionActivity, vscode.ThemeIcon> = {
 	running: new vscode.ThemeIcon("loading~spin"),
 	done: new vscode.ThemeIcon("circle-filled", new vscode.ThemeColor("testing.iconPassed")),
 };
 const ACTIVITY_LABELS: Record<SessionActivity, string> = {
 	running: "Running",
-	done: "Finished",
+	done: "Unread",
 };
 
 export class SessionItem extends vscode.TreeItem {
@@ -22,15 +22,17 @@ export class SessionItem extends vscode.TreeItem {
 		super(sessionLabel(session), vscode.TreeItemCollapsibleState.None);
 		this.id = session.path;
 		const state = activity ? `${ACTIVITY_LABELS[activity]} · ` : "";
-		this.description = `${active ? "● " : ""}${state}${relativeTime(session.modified)}`;
+		this.description = `${active ? "● " : ""}${state}${relativeTime(session.lastReply)}`;
 		const count = `${session.messageCount}${session.truncated ? "+" : ""} messages`;
 		this.tooltip = new vscode.MarkdownString(
 			[
 				`**${escapeMarkdown(sessionLabel(session))}**`,
 				...promptLines(session).map(escapeMarkdown),
 				activity === "running" ? "MarIA Code is working on this session." : undefined,
-				activity === "done" ? "Finished while you were in another session." : undefined,
-				`${count} · ${session.modified.toLocaleString()}`,
+				activity === "done"
+					? "Unread: MarIA Code replied while you were in another session, or you marked it unread."
+					: undefined,
+				`${count} · last reply ${session.lastReply.toLocaleString()}`,
 				`\`${session.id}\``,
 			]
 				.filter(Boolean)
@@ -44,7 +46,7 @@ export class SessionItem extends vscode.TreeItem {
 	}
 }
 
-/** Sessions of the workspace's omp session directory, newest first; refreshes when files change. */
+/** Sessions of the workspace's omp session directory, latest reply first; refreshes when files change. */
 export class SessionsTree implements vscode.TreeDataProvider<SessionItem>, vscode.Disposable {
 	readonly #onDidChangeTreeData = new vscode.EventEmitter<void>();
 	readonly onDidChangeTreeData = this.#onDidChangeTreeData.event;
@@ -121,7 +123,7 @@ export async function pickSession(
 ): Promise<SessionSummary | undefined> {
 	const items = sessions.map(session => ({
 		label: `${session.path === activeFile ? "$(comment-discussion) " : ""}${sessionLabel(session)}`,
-		description: relativeTime(session.modified),
+		description: relativeTime(session.lastReply),
 		detail: promptLines(session).join(" · ") || undefined,
 		session,
 	}));

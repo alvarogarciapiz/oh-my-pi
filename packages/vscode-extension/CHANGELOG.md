@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.36.0]
+
+### Added
+
+- A read Today card has an envelope button beside its delete corner that marks the chat unread: it lights up with the green neon border (and counts on the History badge) as if MarIA Code had just replied, until you open it
+- Models of the `driver-ia` provider (Unicaja's LiteLLM gateway) show a white LiteLLM logo beside their name in the composer's model chip; its tooltip adds "via LiteLLM"
+
+### Changed
+
+- History ages, sections, order and the card's "Last reply" (formerly "Last change") count from MarIA Code's last reply in the chat, so opening or renaming a chat from History no longer moves it to Today or resets its time; the Sessions view does the same
+
+### Fixed
+
+- Long favourite prompts under the logo of a new chat show in full, wrapping onto several lines, instead of being cut off with "…"
+- A chat that finished while you were elsewhere stops showing as unread when you open it from a chat of the other kind (workspace ↔ no workspace) or while the current chat keeps working, instead of staying green
+
 ## [0.35.0]
 
 ### Added

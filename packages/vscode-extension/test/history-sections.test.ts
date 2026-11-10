@@ -5,7 +5,7 @@ import { compactAge, durationLabel, previewOf, sectionOf } from "../webview/chat
 const item = (fields: Partial<SessionListItem> = {}): SessionListItem => ({
 	path: "/s.jsonl",
 	label: "chat",
-	modified: 0,
+	lastReply: 0,
 	active: false,
 	noWorkspace: false,
 	proposals: 0,
@@ -17,20 +17,20 @@ const now = new Date(2026, 10, 4, 10, 0).getTime();
 const at = (day: number, hour: number) => new Date(2026, 10, day, hour, 0).getTime();
 
 describe("history sections", () => {
-	it("puts running chats under Today whenever they last changed, and finished-unseen or proposals by day", () => {
-		expect(sectionOf(item({ activity: "running", proposals: 2, modified: at(1, 9) }), now)).toBe("today");
-		expect(sectionOf(item({ activity: "done", modified: at(4, 9) }), now)).toBe("today");
-		expect(sectionOf(item({ proposals: 1, modified: at(3, 9) }), now)).toBe("yesterday");
+	it("puts running chats under Today whenever MarIA Code last replied, and unread or proposals by day", () => {
+		expect(sectionOf(item({ activity: "running", proposals: 2, lastReply: at(1, 9) }), now)).toBe("today");
+		expect(sectionOf(item({ activity: "done", lastReply: at(4, 9) }), now)).toBe("today");
+		expect(sectionOf(item({ proposals: 1, lastReply: at(3, 9) }), now)).toBe("yesterday");
 	});
 
 	it("groups the rest by local calendar day, not by 24-hour windows", () => {
-		expect(sectionOf(item({ modified: at(4, 0) }), now)).toBe("today");
+		expect(sectionOf(item({ lastReply: at(4, 0) }), now)).toBe("today");
 		// 11 hours ago, but before midnight.
-		expect(sectionOf(item({ modified: at(3, 23) }), now)).toBe("yesterday");
-		expect(sectionOf(item({ modified: at(3, 0) }), now)).toBe("yesterday");
-		expect(sectionOf(item({ modified: at(2, 23) }), now)).toBe("week");
-		expect(sectionOf(item({ modified: new Date(2026, 9, 29, 0, 0).getTime() }), now)).toBe("week");
-		expect(sectionOf(item({ modified: new Date(2026, 9, 28, 23, 0).getTime() }), now)).toBe("older");
+		expect(sectionOf(item({ lastReply: at(3, 23) }), now)).toBe("yesterday");
+		expect(sectionOf(item({ lastReply: at(3, 0) }), now)).toBe("yesterday");
+		expect(sectionOf(item({ lastReply: at(2, 23) }), now)).toBe("week");
+		expect(sectionOf(item({ lastReply: new Date(2026, 9, 29, 0, 0).getTime() }), now)).toBe("week");
+		expect(sectionOf(item({ lastReply: new Date(2026, 9, 28, 23, 0).getTime() }), now)).toBe("older");
 	});
 });
 

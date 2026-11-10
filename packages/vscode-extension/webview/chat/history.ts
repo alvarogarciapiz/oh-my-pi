@@ -11,9 +11,11 @@
  * the host for `listSessions`; picking a row posts `openSession`, its pencil
  * renames it in place (`renameSession`), its trash deletes it after the host's
  * confirmation (`deleteSession`). Sessions working in the window show a spinner,
- * those that finished unseen a green dot (a glowing neon border on cards) and a
- * bold name, the open one a blue bar (a blue border on cards), and those with
- * skill proposals a pill counting them while hovered.
+ * unread ones (MarIA Code finished while you were elsewhere, or you marked them
+ * unread with a Today card's envelope, `markSessionUnread`) a green dot (a glowing
+ * neon border on cards) and a bold name, the open one a blue bar (a blue border on
+ * cards), and those with skill proposals a pill counting them while hovered. Ages
+ * count from MarIA Code's last reply, so opening a chat does not move it.
  */
 import type { ChatRequest, SearchSource, SessionActivity, SessionListItem, SessionSearchHit } from "../../src/protocol";
 import { foldText, parseQuery, termRanges } from "../../src/search-text";
@@ -203,12 +205,16 @@ export class HistoryPanel {
 		this.#render();
 	}
 
-	/** Running/finished marks changed somewhere in the window: update the listed rows. */
+	/** Running/unread marks changed somewhere in the window: update the listed rows. */
 	setActivity(activity: Record<string, SessionActivity>): void {
 		if (!this.#sessions) return;
+		// A chat that stopped running has a new last reply: its age and section change too.
+		const replied = this.#sessions.some(item => item.activity === "running" && activity[item.path] !== "running");
 		for (const item of this.#sessions) item.activity = activity[item.path];
 		// Re-rendering would discard a name being typed; the next render shows the marks.
-		if (this.isOpen && this.#editing === undefined) this.#render();
+		if (!this.isOpen || this.#editing !== undefined) return;
+		this.#render();
+		if (replied) this.post({ type: "listSessions" });
 	}
 
 	/** Pending skill proposals changed somewhere: update the listed rows' curation pills. */
@@ -235,8 +241,8 @@ export class HistoryPanel {
 	}
 
 	/**
-	 * Spinner while the session runs, green dot once it finished unseen; a fixed-width slot so every name lines up.
-	 * Cards pass `dot: false`: their neon border (`.history-card.unread`) marks the unseen finish instead.
+	 * Spinner while the session runs, green dot while it is unread; a fixed-width slot so every name lines up.
+	 * Cards pass `dot: false`: their neon border (`.history-card.unread`) marks it unread instead.
 	 */
 	#marker(item: SessionListItem, dot = true): HTMLElement {
 		const slot = h("span", { className: "history-marker" });
@@ -245,7 +251,7 @@ export class HistoryPanel {
 			setTooltip(slot, "MarIA Code is working on this session");
 		} else if (item.activity === "done" && dot) {
 			slot.append(h("span", { className: "history-activity done" }));
-			setTooltip(slot, "Finished while you were in another session");
+			setTooltip(slot, "Unread: MarIA Code replied while you were elsewhere, or you marked it unread");
 		}
 		return slot;
 	}
@@ -407,7 +413,7 @@ export class HistoryPanel {
 		);
 	}
 
-	/** Row or card classes shared by both shapes: open chat, finished unseen, being renamed. */
+	/** Row or card classes shared by both shapes: open chat, unread, being renamed. */
 	#stateClasses(base: string, item: SessionListItem, editing: boolean): string {
 		const classes = [base];
 		if (item.active) classes.push("active");
@@ -441,8 +447,8 @@ export class HistoryPanel {
 			? this.#renameInput(item)
 			: h("span", { className: "history-label" }, ...highlight(item.label, terms));
 		const [rename, remove] = this.#actions(item);
-		const age = h("span", { className: "history-age" }, compactAge(item.modified, now));
-		setTooltip(age, new Date(item.modified).toLocaleString());
+		const age = h("span", { className: "history-age" }, compactAge(item.lastReply, now));
+		setTooltip(age, `MarIA Code's last reply: ${new Date(item.lastReply).toLocaleString()}`);
 		const row = h(
 			"div",
 			{
@@ -470,8 +476,9 @@ export class HistoryPanel {
 	/**
 	 * Today's chat as a portrait card. The front tells chats apart at a glance:
 	 * state, age, name and where it was left. Clicking the card opens the chat;
-	 * its trash in the bottom corner deletes it; its info button turns it to the
-	 * back: when it started, how long it ran, its size, its first and latest
+	 * its trash in the bottom corner deletes it, and the envelope beside it marks a
+	 * read chat unread; its info button turns it to the back: when it started, when
+	 * MarIA Code last replied, how long it ran, its size, its first and latest
 	 * prompts, and the rename button. Renaming keeps the front in view.
 	 */
 	#card(item: SessionListItem, now: number): HTMLElement {
@@ -491,7 +498,7 @@ export class HistoryPanel {
 				"div",
 				{ className: "history-card-top" },
 				this.#marker(item, false),
-				h("span", { className: "history-card-age" }, compactAge(item.modified, now)),
+				h("span", { className: "history-card-age" }, compactAge(item.lastReply, now)),
 				item.active ? h("span", { className: "history-card-badge" }, "Open") : null,
 			),
 			editing ? this.#renameInput(item) : h("div", { className: "history-card-title" }, item.label),
@@ -536,8 +543,8 @@ export class HistoryPanel {
 				"dl",
 				{ className: "history-card-facts" },
 				item.created === undefined ? null : fact("Started", time(item.created)),
-				fact("Last change", time(item.modified)),
-				item.created === undefined ? null : fact("Ran for", durationLabel(item.created, item.modified)),
+				fact("Last reply", time(item.lastReply)),
+				item.created === undefined ? null : fact("Ran for", durationLabel(item.created, item.lastReply)),
 				messages ? fact("Size", messages) : null,
 			),
 			prompt("First user message", item.firstPromptFull ?? item.firstPrompt),
@@ -560,6 +567,8 @@ export class HistoryPanel {
 		remove.classList.replace("history-row-button", "history-card-delete");
 		if (!editing) {
 			front.append(info, remove);
+			// Only a read chat that is not the open one or working: those are already seen or will light up when done.
+			if (item.activity === undefined && !item.active) front.append(this.#markUnreadButton(item));
 			back.append(faceButton("close", "Hide details"));
 		}
 		const card = h(
@@ -584,6 +593,19 @@ export class HistoryPanel {
 		// A re-render rebuilds the grid without its widened tracks: widen it again once the card is in place.
 		if (flipped) queueMicrotask(() => card.parentElement && widenColumn(card.parentElement, card));
 		return card;
+	}
+
+	/** Envelope beside a card's trash: the chat lights up as unread (as if MarIA Code had just replied) until opened. */
+	#markUnreadButton(item: SessionListItem): HTMLButtonElement {
+		const button = iconButton("mailDot", "Mark as unread", event => {
+			event.stopPropagation();
+			// Shown at once; the host's `sessionActivity` confirms it in every chat.
+			item.activity = "done";
+			this.post({ type: "markSessionUnread", path: item.path });
+			this.#render();
+		});
+		button.classList.add("history-card-mark-unread");
+		return button;
 	}
 
 	/**

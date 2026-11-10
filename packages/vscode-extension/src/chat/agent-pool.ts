@@ -7,7 +7,8 @@
  * omp again: at most `MAX_WARM_HOSTS` idle hosts, each for up to `WARM_TTL_MS`,
  * the least recently used stopping first (the session is on disk and reopens
  * with `--resume`). A turn that finished with no view attached is remembered as
- * "done" until a view shows the session again.
+ * "done" (unread) until a view shows the session again; the user can also mark
+ * a session unread.
  */
 import * as vscode from "vscode";
 import type { CheckpointStore } from "../checkpoints/store";
@@ -24,11 +25,11 @@ export class AgentPool implements vscode.Disposable {
 	readonly #hosts = new Set<AgentHost>();
 	/** Idle hosts no view shows, oldest first, each with the timer that stops it. */
 	readonly #warm = new Map<AgentHost, NodeJS.Timeout>();
-	/** Session files whose background turn finished since a view last showed them. */
+	/** Unread session files: a background turn finished, or the user marked them, since a view last showed them. */
 	readonly #done = new Set<string>();
 	#signature = "";
 	readonly #onDidChangeActivity = new vscode.EventEmitter<void>();
-	/** Fires when a session starts or stops running, or a finished one is seen. */
+	/** Fires when a session starts or stops running, or turns unread or read. */
 	readonly onDidChangeActivity = this.#onDidChangeActivity.event;
 	readonly #onNeedsAttention = new vscode.EventEmitter<AgentHost>();
 	/** A session no view shows is waiting for the user (a plan to approve). */
@@ -73,9 +74,15 @@ export class AgentPool implements vscode.Disposable {
 		return result;
 	}
 
-	/** A view shows `sessionFile`: it is no longer "done" unseen. */
+	/** A view started showing `sessionFile`: it is read. */
 	seen(sessionFile: string | undefined): void {
 		if (sessionFile && this.#done.delete(sessionFile)) this.#fireIfChanged();
+	}
+
+	/** The user marked `sessionFile` unread: it shows as "done" until a view shows it again. */
+	markUnread(sessionFile: string): void {
+		this.#done.add(sessionFile);
+		this.#fireIfChanged();
 	}
 
 	/** A view stopped showing `host`: keep it warm if it is idle, or let it finish its work. */

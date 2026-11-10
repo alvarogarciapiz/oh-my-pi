@@ -1,7 +1,7 @@
 /**
  * Where each chat of the history panel goes and how its row reads, apart from the
- * DOM so the rules can be tested: chats by calendar day of their last change,
- * with running chats always under Today.
+ * DOM so the rules can be tested: chats by calendar day of MarIA Code's last
+ * reply, with running chats always under Today.
  */
 import type { SessionListItem } from "../../src/protocol";
 
@@ -28,29 +28,29 @@ function dayStart(now: number, daysBack: number): number {
 
 /**
  * A running chat is current work: it goes under Today (marked by its spinner)
- * whenever it last changed. Any other goes by the local calendar day it last
- * changed ("This week" covers the 5 days before yesterday).
+ * whenever MarIA Code last replied. Any other goes by the local calendar day of
+ * that reply ("This week" covers the 5 days before yesterday).
  */
 export function sectionOf(item: SessionListItem, now: number): SectionId {
-	if (item.activity === "running" || item.modified >= dayStart(now, 0)) return "today";
-	if (item.modified >= dayStart(now, 1)) return "yesterday";
-	if (item.modified >= dayStart(now, 6)) return "week";
+	if (item.activity === "running" || item.lastReply >= dayStart(now, 0)) return "today";
+	if (item.lastReply >= dayStart(now, 1)) return "yesterday";
+	if (item.lastReply >= dayStart(now, 6)) return "week";
 	return "older";
 }
 
 /**
- * Short age for the row's right edge: "now", "5m", "3h" within 24 hours, the time
- * for earlier yesterday, the weekday within the week, then the date.
+ * Short age of `time` for the row's right edge: "now", "5m", "3h" within 24 hours,
+ * the time for earlier yesterday, the weekday within the week, then the date.
  */
-export function compactAge(modified: number, now: number): string {
-	const minutes = Math.floor((now - modified) / 60_000);
+export function compactAge(time: number, now: number): string {
+	const minutes = Math.floor((now - time) / 60_000);
 	if (minutes < 1) return "now";
 	if (minutes < 60) return `${minutes}m`;
 	const hours = Math.floor(minutes / 60);
 	if (hours < 24) return `${hours}h`;
-	const date = new Date(modified);
-	if (modified >= dayStart(now, 1)) return date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-	if (modified >= dayStart(now, 6)) return date.toLocaleDateString(undefined, { weekday: "short" });
+	const date = new Date(time);
+	if (time >= dayStart(now, 1)) return date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+	if (time >= dayStart(now, 6)) return date.toLocaleDateString(undefined, { weekday: "short" });
 	const sameYear = date.getFullYear() === new Date(now).getFullYear();
 	return date.toLocaleDateString(undefined, {
 		month: "short",
@@ -59,9 +59,9 @@ export function compactAge(modified: number, now: number): string {
 	});
 }
 
-/** How long a chat ran, from its start to its last change: "<1m", "45m", "2h 15m", "3d 4h". */
-export function durationLabel(created: number, modified: number): string {
-	const minutes = Math.floor(Math.max(0, modified - created) / 60_000);
+/** How long a chat ran, from its start to MarIA Code's last reply: "<1m", "45m", "2h 15m", "3d 4h". */
+export function durationLabel(created: number, lastReply: number): string {
+	const minutes = Math.floor(Math.max(0, lastReply - created) / 60_000);
 	if (minutes < 1) return "<1m";
 	if (minutes < 60) return `${minutes}m`;
 	const hours = Math.floor(minutes / 60);

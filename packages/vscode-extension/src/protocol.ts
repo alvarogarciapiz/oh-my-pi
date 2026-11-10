@@ -183,7 +183,7 @@ export interface SubagentRequestView {
 	current: boolean;
 }
 
-/** What a session is doing in this window: working, or finished while no chat showed it. */
+/** What a session is doing in this window: working, or unread (MarIA Code finished while no chat showed it, or the user marked it unread). */
 export type SessionActivity = "running" | "done";
 
 /** One row of the chat's history panel (a session file of the workspace). */
@@ -198,8 +198,8 @@ export interface SessionListItem {
 	firstPromptFull?: string;
 	/** The whole latest prompt, the same way; absent when `lastPrompt` is. */
 	lastPromptFull?: string;
-	/** When the session file last changed (epoch ms); the panel groups chats by its calendar day and shows their age. */
-	modified: number;
+	/** When MarIA Code last replied (epoch ms; see `SessionSummary.lastReply`); the panel groups chats by its calendar day and shows their age. */
+	lastReply: number;
 	/** When the session started (epoch ms); the Today cards show it with how long the chat ran. */
 	created?: number;
 	/** User and assistant messages counted; a lower bound when `messagesPartial`. */
@@ -363,6 +363,8 @@ export type ChatRequest =
 	| { type: "renameSession"; path?: string; name: string }
 	/** Delete the session at `path` (named `label` in the confirmation); the host re-sends `sessions`. */
 	| { type: "deleteSession"; path: string; label: string }
+	/** Mark the session at `path` unread (`sessionActivity` "done") until a chat shows it again. */
+	| { type: "markSessionUnread"; path: string }
 	/** Pick files with the open dialog and insert them as `@path` mentions. */
 	| { type: "attachFiles" }
 	| { type: "setModel"; provider: string; modelId: string }

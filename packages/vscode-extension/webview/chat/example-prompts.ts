@@ -52,11 +52,7 @@ export class ExamplePrompts {
 			this.element.replaceChildren();
 			return;
 		}
-		const chips = this.#prompts.map(prompt => {
-			const chip = button(prompt, "example", () => this.onPick(prompt));
-			chip.title = prompt;
-			return chip;
-		});
+		const chips = this.#prompts.map(prompt => button(prompt, "example", () => this.onPick(prompt)));
 		const edit = button("", "link-button examples-edit", () => this.#openEditor());
 		edit.append(icon("pencil"), this.#prompts.length > 0 ? "Editar prompts" : "Añadir tus prompts favoritos");
 		setTooltip(edit, "Pon aquí tus prompts favoritos; se guardan para todos los chats");

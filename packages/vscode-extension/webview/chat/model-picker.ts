@@ -5,7 +5,7 @@
  */
 import type { ChatRequest, ModelChoice, SessionState, ThinkingLevel } from "../../src/protocol";
 import { h } from "../dom";
-import { icon } from "../icons";
+import { icon, type IconName } from "../icons";
 import { setTooltip } from "../tooltip";
 
 type Post = (request: ChatRequest) => void;
@@ -13,6 +13,14 @@ type CurrentModel = SessionState["model"];
 
 /** A filter input appears above the catalog past this many models. */
 const FILTER_THRESHOLD = 8;
+
+/**
+ * Gateways behind a provider id of the user's models.yml, by that id: the composer chip
+ * shows the gateway's logo beside the model name. `driver-ia` is Unicaja's alias for LiteLLM.
+ */
+const PROVIDER_GATEWAYS: Record<string, { icon: IconName; name: string }> = {
+	"driver-ia": { icon: "litellm", name: "LiteLLM" },
+};
 
 const LEVEL_LABELS: Record<ThinkingLevel, string> = {
 	inherit: "Inherit",
@@ -102,8 +110,16 @@ export class ModelPicker {
 				? ` · ${label(this.#level)}`
 				: "";
 		const chevron = icon("chevronDown");
-		this.#trigger.replaceChildren(h("span", { className: "picker-text" }, model + level), chevron);
-		setTooltip(this.#trigger, this.#current ? `${this.#current.provider}/${this.#current.id}` : "Select model");
+		const gateway = this.#current ? PROVIDER_GATEWAYS[this.#current.provider] : undefined;
+		const badge = gateway ? icon(gateway.icon) : null;
+		badge?.classList.add("picker-gateway");
+		this.#trigger.replaceChildren(
+			...(badge ? [badge] : []),
+			h("span", { className: "picker-text" }, model + level),
+			chevron,
+		);
+		const target = this.#current ? `${this.#current.provider}/${this.#current.id}` : "Select model";
+		setTooltip(this.#trigger, gateway ? `${target} · via ${gateway.name}` : target);
 	}
 
 	#open(): void {

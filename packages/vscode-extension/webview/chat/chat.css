@@ -1811,9 +1811,9 @@ code {
 	background: transparent;
 	color: var(--c-fg-2);
 	text-align: left;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
+	line-height: 1.4;
+	white-space: normal;
+	overflow-wrap: anywhere;
 }
 
 .example:hover {
@@ -2483,6 +2483,30 @@ code {
 	color: var(--c-del);
 }
 
+/* Marks a read chat unread: beside the delete corner, the same size and tint, lighting green like an unread card. */
+.history-card-mark-unread {
+	position: absolute;
+	right: 40px;
+	bottom: 0;
+	z-index: 2;
+	width: 40px;
+	height: 32px;
+	border-radius: var(--r-lg) var(--r-lg) 0 0;
+	background: color-mix(in srgb, var(--c-fg) 7%, transparent);
+	color: var(--c-fg-2);
+	cursor: pointer;
+}
+
+.history-card-mark-unread .icon {
+	width: 16px;
+	height: 16px;
+}
+
+.history-card-mark-unread:hover {
+	background: color-mix(in srgb, var(--c-add) 28%, transparent);
+	color: var(--c-add);
+}
+
 .history-card-face {
 	position: absolute;
 	inset: 0;
@@ -2674,6 +2698,11 @@ code {
 	gap: 6px;
 	color: var(--c-fg-3);
 	font-size: 10px;
+}
+
+/* Also clear of the mark-unread button beside it. */
+.history-card-front:has(.history-card-mark-unread) .history-card-foot {
+	padding-right: 72px;
 }
 
 .history-card-facts {
@@ -4793,6 +4822,19 @@ code {
 .picker-trigger .icon {
 	width: 12px;
 	height: 12px;
+}
+
+/* The gateway behind the model (LiteLLM for driver-ia), white beside its name; light themes use the text colour so it stays visible. */
+.picker-trigger .icon.picker-gateway {
+	flex: none;
+	width: 14px;
+	height: 14px;
+	color: #fff;
+}
+
+body.vscode-light .picker-trigger .icon.picker-gateway,
+body.vscode-high-contrast-light .picker-trigger .icon.picker-gateway {
+	color: var(--c-fg);
 }
 
 .picker-menu {

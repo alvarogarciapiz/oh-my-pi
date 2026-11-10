@@ -74,6 +74,56 @@ describe("listSessions", () => {
 		expect(byId.u?.created).toBeUndefined();
 	});
 
+	it("dates a session by MarIA Code's latest reply, not by later writes to its file, and sorts by it", async () => {
+		const dir = await tempDir();
+		const line = (entry: object) => JSON.stringify(entry);
+		const reply = (timestamp: string, padding = 10) =>
+			line({
+				type: "message",
+				timestamp,
+				message: { role: "assistant", content: [{ type: "text", text: "x".repeat(padding) }] },
+			});
+		const prompt = (text: string) =>
+			line({ type: "message", message: { role: "user", content: [{ type: "text", text }] } });
+		const header = (id: string) =>
+			line({ type: "session", version: 3, id, cwd: "/w", timestamp: "2026-01-01T08:00:00.000Z" });
+		// Reopening writes entries after the last reply (model changes, digests) and touches the file.
+		const reopened = path.join(dir, "2026-01-01_r.jsonl");
+		await fs.writeFile(
+			reopened,
+			`${[
+				header("r"),
+				prompt("hi"),
+				reply("2026-01-01T09:00:00.000Z"),
+				line({ type: "model_change", timestamp: "2026-01-05T12:00:00.000Z" }),
+			].join("\n")}\n`,
+		);
+		await fs.utimes(reopened, new Date("2026-01-05T12:00:00Z"), new Date("2026-01-05T12:00:00Z"));
+		// Long enough that its latest reply is read from the end, past the scanned prefix.
+		const long = path.join(dir, "2026-01-01_l.jsonl");
+		await fs.writeFile(
+			long,
+			`${[
+				header("l"),
+				prompt("start"),
+				reply("2026-01-02T09:00:00.000Z", 100_000),
+				prompt("more"),
+				reply("2026-01-03T09:00:00.000Z", 100_000),
+			].join("\n")}\n`,
+		);
+		// No reply yet: dated by when it started.
+		await fs.writeFile(path.join(dir, "2026-01-01_n.jsonl"), `${[header("n"), prompt("waiting")].join("\n")}\n`);
+
+		const sessions = await listSessions(dir);
+
+		expect(sessions.map(session => [session.id, session.lastReply.toISOString()])).toEqual([
+			["l", "2026-01-03T09:00:00.000Z"],
+			["r", "2026-01-01T09:00:00.000Z"],
+			["n", "2026-01-01T08:00:00.000Z"],
+		]);
+		expect(sessions[0]?.truncated).toBe(true);
+	});
+
 	it("lists a reply to selected text by what the user wrote, not its wrapper", async () => {
 		const dir = await tempDir();
 		const file = path.join(dir, "2026-01-01_q.jsonl");
