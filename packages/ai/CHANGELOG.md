@@ -5,6 +5,7 @@
 ### Fixed
 
 - Fixed parallel tool calls from OpenAI-compatible gateways that reuse one stream index or send no ids (seen with GLM via LiteLLM) being merged into a single call that failed with "Tool call arguments are not valid JSON … Unexpected trailing characters"; each call now runs separately
+- Fixed `PI_REQ_DEBUG` dumps writing credential headers (`authorization`, API keys, cookies) to disk; request and response header records now show `[redacted]` for them
 
 ## [18.9.1] - 2026-10-11
 
