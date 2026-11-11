@@ -1180,83 +1180,90 @@ describe("AgentSession handoff", () => {
 			expect.objectContaining({ type: "agent_end", isTerminal: true, yielded: true }),
 		]);
 	});
-	it("resets to the base system prompt before generating a handoff", async () => {
-		const model = session.model;
-		if (!model) {
-			throw new Error("Expected model to be set");
-		}
-		await session.dispose();
-		sessionManager = SessionManager.create(tempDir.path(), tempDir.path());
+	for (const autoTriggered of [false, true]) {
+		it(
+			autoTriggered
+				? "keeps the live hook prompt cache prefix for automatic handoff"
+				: "resets to the base system prompt before manual handoff",
+			async () => {
+				const model = session.model;
+				if (!model) {
+					throw new Error("Expected model to be set");
+				}
+				await session.dispose();
+				sessionManager = SessionManager.create(tempDir.path(), tempDir.path());
 
-		const extensionsResult = await loadExtensions([], tempDir.path());
-		const extensionRunner = new ExtensionRunner(
-			extensionsResult.extensions,
-			extensionsResult.runtime,
-			tempDir.path(),
-			sessionManager,
-			modelRegistry,
+				const extensionsResult = await loadExtensions([], tempDir.path());
+				const extensionRunner = new ExtensionRunner(
+					extensionsResult.extensions,
+					extensionsResult.runtime,
+					tempDir.path(),
+					sessionManager,
+					modelRegistry,
+				);
+				const emitBeforeAgentStart = vi.spyOn(extensionRunner, "emitBeforeAgentStart").mockResolvedValueOnce({
+					systemPrompt: ["Hook override"],
+				});
+				vi.spyOn(extensionRunner, "emit").mockResolvedValue(undefined);
+
+				const mock = createMockModel({
+					responses: [{ content: ["normal response"] }],
+				});
+				const agent = new Agent({
+					getApiKey: () => "test-key",
+					initialState: {
+						model,
+						systemPrompt: ["Test"],
+						tools: [],
+						messages: [],
+					},
+					streamFn: mock.stream,
+				});
+
+				session = new AgentSession({
+					agent,
+					sessionManager,
+					settings: Settings.isolated({ "compaction.enabled": false, "compaction.keepRecentTokens": 1 }),
+					modelRegistry,
+					extensionRunner,
+				});
+				sessionManager.appendMessage({
+					role: "user",
+					content: [{ type: "text", text: "seed" }],
+					timestamp: Date.now() - 2,
+				});
+				sessionManager.appendMessage({
+					role: "assistant",
+					content: [{ type: "text", text: "seed response" }],
+					api: model.api,
+					provider: model.provider,
+					model: model.id,
+					stopReason: "stop",
+					usage: {
+						input: 16,
+						output: 8,
+						cacheRead: 0,
+						cacheWrite: 0,
+						totalTokens: 24,
+						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+					},
+					timestamp: Date.now() - 1,
+				});
+
+				await session.prompt("hello from user");
+				const generateHandoffSpy = vi
+					.spyOn(compactionModule, "generateHandoffFromContext")
+					.mockResolvedValue("## Goal\nContinue from here");
+				await session.handoff(undefined, { autoTriggered });
+
+				expect(emitBeforeAgentStart).toHaveBeenCalledTimes(1);
+				expect(mock.calls.map(c => c.context.systemPrompt?.join("\n\n") ?? "")).toEqual(["Hook override"]);
+				const handoffCall = generateHandoffSpy.mock.calls[0];
+				if (!handoffCall) throw new Error("Expected generateHandoffFromContext call");
+				expect(handoffCall[0].systemPrompt).toEqual(autoTriggered ? mock.calls[0]!.context.systemPrompt : ["Test"]);
+			},
 		);
-		const emitBeforeAgentStart = vi.spyOn(extensionRunner, "emitBeforeAgentStart").mockResolvedValueOnce({
-			systemPrompt: ["Hook override"],
-		});
-		vi.spyOn(extensionRunner, "emit").mockResolvedValue(undefined);
-
-		const mock = createMockModel({
-			responses: [{ content: ["normal response"] }],
-		});
-		const agent = new Agent({
-			getApiKey: () => "test-key",
-			initialState: {
-				model,
-				systemPrompt: ["Test"],
-				tools: [],
-				messages: [],
-			},
-			streamFn: mock.stream,
-		});
-
-		session = new AgentSession({
-			agent,
-			sessionManager,
-			settings: Settings.isolated({ "compaction.enabled": false, "compaction.keepRecentTokens": 1 }),
-			modelRegistry,
-			extensionRunner,
-		});
-		sessionManager.appendMessage({
-			role: "user",
-			content: [{ type: "text", text: "seed" }],
-			timestamp: Date.now() - 2,
-		});
-		sessionManager.appendMessage({
-			role: "assistant",
-			content: [{ type: "text", text: "seed response" }],
-			api: model.api,
-			provider: model.provider,
-			model: model.id,
-			stopReason: "stop",
-			usage: {
-				input: 16,
-				output: 8,
-				cacheRead: 0,
-				cacheWrite: 0,
-				totalTokens: 24,
-				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-			},
-			timestamp: Date.now() - 1,
-		});
-
-		await session.prompt("hello from user");
-		const generateHandoffSpy = vi
-			.spyOn(compactionModule, "generateHandoffFromContext")
-			.mockResolvedValue("## Goal\nContinue from here");
-		await session.handoff();
-
-		expect(emitBeforeAgentStart).toHaveBeenCalledTimes(1);
-		expect(mock.calls.map(c => c.context.systemPrompt?.join("\n\n") ?? "")).toEqual(["Hook override"]);
-		const handoffCall = generateHandoffSpy.mock.calls[0];
-		if (!handoffCall) throw new Error("Expected generateHandoffFromContext call");
-		expect(handoffCall[0].systemPrompt).toEqual(["Test"]);
-	});
+	}
 
 	it("forwards the agent's provider prompt-cache key to the handoff request", async () => {
 		// Cache parity: the live loop routes on the agent's promptCacheKey

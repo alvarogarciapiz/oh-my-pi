@@ -150,12 +150,13 @@ export class SessionHandoff {
 				},
 			];
 			const handoffLlmMessages = await this.#host.convertMessagesToLlm(handoffSnapshot, handoffSignal);
-			// Base system prompt, not a per-turn `before_agent_start` hook override —
-			// the document seeds the post-compaction context and must not carry
-			// prompt-specific hook state.
+			// Automatic maintenance must read the exact prefix the live turn cached,
+			// including before_agent_start overrides. The generated text alone is
+			// persisted, so this does not pin that override onto future turns.
+			// Explicit /handoff keeps its base-prompt semantics.
 			const handoffContext = await this.#host.agent.buildSideRequestContext(
 				handoffLlmMessages,
-				this.#host.baseSystemPrompt(),
+				options?.autoTriggered ? this.#host.agent.state.systemPrompt : this.#host.baseSystemPrompt(),
 			);
 			const handoffStreamOptions = this.#host.prepareSimpleStreamOptions(
 				{
