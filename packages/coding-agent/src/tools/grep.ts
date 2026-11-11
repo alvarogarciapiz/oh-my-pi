@@ -531,7 +531,9 @@ export class GrepTool implements AgentTool<typeof searchSchema, GrepToolDetails>
 			}
 			const scopedPaths = toPathList(rawPath);
 			const effectivePaths = scopedPaths.length > 0 ? scopedPaths : ["."];
-			const rawEntries = await expandDelimitedPathEntries(effectivePaths, this.session.cwd);
+			const rawEntries = await expandDelimitedPathEntries(effectivePaths, this.session.cwd, {
+				mixedLocalPaths: true,
+			});
 			const pathSpecs = await parsePathSpecs(rawEntries, this.session.cwd);
 			const resolveContext = sessionResolveContext(this.session, { signal });
 			// Internal URLs resolve inside the native search, bounded by the tier this call was approved at.
