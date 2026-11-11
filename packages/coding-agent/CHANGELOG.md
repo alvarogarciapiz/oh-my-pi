@@ -81,6 +81,7 @@
 - The `edit` tool in `replace` mode and the `grep`, `find` and `bash` tools now carry worked call examples in their descriptions
 ### Fixed
 
+- Fixed background completions (subagent results, launch completions, asides) restarting a run the user stopped with Esc: they now fold into context until a later turn ends on its own, and an Esc that stopped nothing no longer suppresses later background wakes
 - Fixed `/session delete` from RPC/ACP hosts leaving the live agent attached to the deleted file: the session now switches to a new, resumable session before the file is deleted and reports the new session id and path
 - Fixed SDK embedders leaking every disposed `AgentSession` that owned its MCP manager, so long-lived processes that create and dispose many sessions grew memory without bound
 - Fixed large session files ending in a truncated record not being repaired on load, unlike small ones
