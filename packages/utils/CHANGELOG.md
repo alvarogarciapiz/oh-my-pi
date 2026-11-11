@@ -8,6 +8,7 @@
 
 ### Fixed
 
+- Fixed `ptree` process trees: a command that leaves an orphaned background child now honors its timeout, aborted processes no longer raise unhandled rejections, and children are signaled directly (SIGTERM, then SIGKILL after the grace period) when native termination fails
 - Fixed `JsonLexer.string()` running past a closing delimiter other than `"` or `'` (such as a backtick) in strings longer than 32 characters ([#15273](https://github.com/can1357/oh-my-pi/pull/15273) by [@iliaal](https://github.com/iliaal)).
 
 ## [18.9.0] - 2026-10-11
