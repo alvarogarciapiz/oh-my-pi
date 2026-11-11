@@ -207,7 +207,8 @@ function makeProgressBar(total: number, width = 30): ProgressBar {
  * ignoring the user-facing consent gate (manual push is the user's
  * explicit "yes ship these now" intent).
  *
- * Requires endpoint configuration (default `qa.omp.sh/v1/grievances`).
+ * Requires endpoint configuration (`dev.autoqaPush.endpoint` or
+ * `PI_AUTO_QA_PUSH_URL`; empty by default).
  */
 export async function pushGrievances(options: PushGrievancesOptions): Promise<void> {
 	const db = openAutoQaDb();

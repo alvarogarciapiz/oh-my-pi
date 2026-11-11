@@ -49,6 +49,7 @@
 
 ### Changed
 
+- Auto-QA tool-issue reporting (`dev.autoqa`) is now off by default and `dev.autoqaPush.endpoint` is empty by default, so no grievances are recorded or pushed until you enable it and configure an endpoint
 - Replies now match their technical depth to you, per topic: terms you haven't used get a one-clause gloss on first use, terms you use yourself aren't explained, and reasoning reads as one linked thread instead of bare fragments. A short question never lowers the depth; it drops only when you ask ("what is X?", "simpler") or say you aren't technical, in which case answers get shorter and focus on impact and decisions
 - The hidden eval-state note added when a session that used `eval` is resumed or rewound no longer makes the agent re-run earlier eval work or tell you about kernels: it says earlier results in the transcript stay valid and setup is redefined only before eval code that needs it
 - The agent now introduces itself as MarIA Code, Unicaja's technical agent, in both the coding and the general system prompt

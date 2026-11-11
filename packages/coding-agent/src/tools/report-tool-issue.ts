@@ -5,11 +5,11 @@
  * `xd://report_issue`, and the system prompt tells the model to write
  * `<tool>: <concise description>` there when auto-QA is enabled.
  *
- * Enabled by default (`dev.autoqa` defaults to true); `PI_AUTO_QA=0` or an
- * explicit `dev.autoqa: false` short-circuits injection entirely. When the
- * user is only enabled by default (never configured `dev.autoqa` themselves),
- * a persisted `dev.autoqaConsent: "denied"` also disables injection so a "No"
- * in the consent dialog fully turns the feature off.
+ * Disabled by default (`dev.autoqa` defaults to false); `PI_AUTO_QA=1` or an
+ * explicit `dev.autoqa: true` enables it, while `PI_AUTO_QA=0` or an explicit
+ * `dev.autoqa: false` short-circuits injection entirely. When the setting is
+ * left unconfigured, a persisted `dev.autoqaConsent: "denied"` also disables
+ * injection so a "No" in the consent dialog fully turns the feature off.
  * Records grievances to a local SQLite database; never throws from the device
  * dispatch path.
  *
@@ -21,8 +21,9 @@
  * read the persisted decision live without prompting. `PI_AUTO_QA_PUSH=1` bypasses
  * the dialog for headless environments.
  *
- * When the user grants consent, push is automatically active against the
- * bundled endpoint (`dev.autoqaPush.endpoint`, default `qa.omp.sh`). Each
+ * When the user grants consent, push is active only against a configured
+ * endpoint (`dev.autoqaPush.endpoint` or `PI_AUTO_QA_PUSH_URL`; empty by
+ * default, which means no push). Each
  * insert schedules a background flush that POSTs pending rows and marks them
  * pushed on HTTP 2xx. Rows the collector permanently refuses (400/413/422) are
  * isolated by bisecting the batch and parked with the server's error, so a
