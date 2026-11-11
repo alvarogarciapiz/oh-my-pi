@@ -3817,6 +3817,8 @@ function buildSubagentSessionOptions(
 		expectedAgentRef,
 		resolveServiceTierByFamily: launch?.resolveServiceTierByFamily,
 		onFirstChatDispatch: launch?.onFirstChatDispatch,
+		// A launch prompts its assignment only after setup; a revive's turns are its IRC wakes.
+		awaitingAssignment: launch !== undefined,
 		// A fork sends the parent's prompt bytes unchanged (cache prefix); its role block rides the
 		// first user message instead. The reviver rebuilds from the same spec and keeps it.
 		systemPrompt: forkSystemPrompt
