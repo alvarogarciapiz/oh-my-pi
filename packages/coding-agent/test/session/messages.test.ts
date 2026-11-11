@@ -69,6 +69,22 @@ describe("convertToLlm", () => {
 		expect(otherCustom?.role).toBe("developer");
 	});
 
+	it("sends incoming agent mail as a user turn attributed to the agent", () => {
+		const llm = convertToLlm([
+			{
+				role: "custom",
+				customType: "irc:incoming",
+				content: "<irc>hola</irc>",
+				display: true,
+				attribution: "agent",
+				timestamp: 1,
+			},
+		]);
+
+		expect(llm).toHaveLength(1);
+		expect(llm[0]).toMatchObject({ role: "user", attribution: "agent" });
+	});
+
 	it("replays tool calls saved under an xd:// alias by their bare device name", () => {
 		const saved = {
 			...abortedAssistant([{ type: "toolCall", id: "call_1|fc_1", name: "xd://recall", arguments: { q: "x" } }]),
