@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- LiteLLM handoff and background compaction now share the live turn's cache-affinity header; requests with a shared prompt-cache key are grouped under that key in LiteLLM session logs
+
 ## [18.9.1] - 2026-10-11
 
 ### Added

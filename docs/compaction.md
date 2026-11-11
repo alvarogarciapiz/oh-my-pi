@@ -102,6 +102,23 @@ Validate on the actual backend with a long, warmed conversation: compare handoff
 
 Server references: [vLLM automatic prefix caching](https://docs.vllm.ai/en/latest/features/automatic_prefix_caching/), [vLLM tool-choice behavior](https://docs.vllm.ai/en/latest/features/tool_calling/).
 
+#### LiteLLM → vLLM with GLM-5.3-Flash
+
+The harness sends the stable cache key as `x-litellm-session-id` on its OpenAI-compatible LiteLLM route, including discovered custom LiteLLM providers. Transport session IDs remain separate. An explicit configured header takes precedence; avoid a fixed header shared by unrelated conversations. LiteLLM also uses this value to group session logs.
+
+For multiple deployments in one LiteLLM model group, enable its deployment session affinity (merge this check with any existing checks):
+
+```yaml
+router_settings:
+  optional_pre_call_checks: [session_affinity]
+```
+
+If an `api_base` points to a Kubernetes service balancing several vLLM pods, deployment affinity alone does not select the pod. On LiteLLM versions supporting it, use a headless service with `litellm_params.kubernetes_pod_discovery: true`. Multiple LiteLLM replicas need shared Redis for deployment pins. A single vLLM replica does not need pod discovery. See [LiteLLM affinity](https://docs.litellm.ai/docs/routing#session-affinity-sticky-sessions) and [pod routing](https://docs.litellm.ai/docs/proxy/cache_aware_routing).
+
+GLM-5.3-Flash combines KDA recurrent state with sparse MLA, so validate prefix-cache support against the installed vLLM version and startup logs, not just the presence of an ordinary KV-cache pool. Enable prefix caching and keep the hybrid cache manager supported by that version. The [vLLM model recipe](https://recipes.vllm.ai/zai-org/GLM-5.3-Flash) documents `glm5_next` tokenization, `glm47` tool/reasoning parsers, and mandatory reasoning with `low`, `high`, `max` effort. Its template injects effort into the system prompt: use the same effective effort for the live turn and summary when measuring prefix reuse. Disabling thinking is not a shortcut for this model.
+
+If LMCache is installed, its [GLM-5.3-Flash recipe](https://docs.lmcache.ai/recipes/glm5_3_flash.html) has additional hybrid-state requirements and version-specific caveats. Do not apply LMCache flags to a plain vLLM deployment.
+
 ### Compaction shape (visual)
 
 ```text
