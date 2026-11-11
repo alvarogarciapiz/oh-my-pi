@@ -69,6 +69,7 @@ describe("async speculative compaction", () => {
 			methodOrder?: CompactionMethod[];
 			experimental?: boolean;
 			recoveryTools?: boolean;
+			preferWebsockets?: boolean;
 			obfuscateTextForProvider?: (text: string | undefined) => string | undefined;
 			obfuscatePreparationForProvider?: <T>(preparation: T) => T;
 			convertToLlmForSideRequest?: (messages: AgentMessage[]) => never;
@@ -102,7 +103,7 @@ describe("async speculative compaction", () => {
 				throw new Error("The compact seam should be used instead of the side stream");
 			},
 			providerSessionState: new Map(),
-			preferWebsockets: () => undefined,
+			preferWebsockets: () => options.preferWebsockets,
 			model: () => model,
 			thinkingLevel: () => undefined,
 			isDisposed: () => false,
@@ -250,6 +251,26 @@ describe("async speculative compaction", () => {
 		expect(maintenance.speculationState).toBe("running");
 		await waitForState("armed");
 		expect(compactSpy).toHaveBeenCalledTimes(1);
+	});
+
+	it("isolates speculative provider sessions while retaining the live prefix-cache routing key", async () => {
+		maintenance = createMaintenance({ preferWebsockets: true });
+		agent.sessionId = sessionManager.getSessionId();
+		agent.promptCacheKey = "live-prefix-cache";
+		const compactSpy = vi.spyOn(compactionModule, "compact").mockImplementation(async preparation => ({
+			summary: "isolated summary",
+			firstKeptEntryId: preparation.firstKeptEntryId,
+			tokensBefore: preparation.tokensBefore,
+			details: {},
+		}));
+
+		maintenance.maybeStartSpeculativeCompaction(SPECULATION_BAND_START, CONTEXT_WINDOW);
+		await waitForState("armed");
+
+		const requestOptions = compactSpy.mock.calls[0]?.[5];
+		expect(requestOptions?.sessionId).toStartWith(`${sessionManager.getSessionId()}:spec:`);
+		expect(requestOptions?.promptCacheKey).toBe("live-prefix-cache");
+		expect(requestOptions?.preferWebsockets).toBe(false);
 	});
 
 	it("commits an armed summary at threshold without paying for another summarizer call", async () => {

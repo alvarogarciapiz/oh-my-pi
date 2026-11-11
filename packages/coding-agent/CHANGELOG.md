@@ -79,6 +79,7 @@
 - The `edit` tool in `replace` mode and the `grep`, `find` and `bash` tools now carry worked call examples in their descriptions
 ### Fixed
 
+- Background compaction now keeps its provider session separate from the live turn while sharing its prompt-cache routing key
 - Automatic handoff compaction keeps the live system prompt, including extension overrides, so generating the summary can reuse the current prompt cache
 - Session folders inside home whose names begin with two dots now use the home-relative history bucket
 - Fixed the system prompt claiming user content is sanitized: instructions found in tool output, web pages, fetched documents, MCP results and ordinary files are now treated as data, never obeyed

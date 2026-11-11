@@ -3556,10 +3556,13 @@ export class SessionMaintenance {
 						// (xai-oauth/grok-build) don't trip requireSupportedEffort.
 						thinkingLevel: this.#host.thinkingLevel(),
 						tools: this.#host.agent.state.tools,
-						sessionId: this.#host.sessionId(),
-						promptCacheKey: this.#host.agent.promptCacheKey ?? this.#host.agent.sessionId,
+						// Speculation has its own provider session but reads the live
+						// prefix cache. Do not overwrite its isolated transport lane.
+						sessionId: options?.sessionId ?? this.#host.sessionId(),
+						promptCacheKey:
+							options?.promptCacheKey ?? this.#host.agent.promptCacheKey ?? this.#host.agent.sessionId,
 						providerSessionState: this.#host.providerSessionState,
-						preferWebsockets: this.#host.preferWebsockets(),
+						preferWebsockets: options?.preferWebsockets ?? this.#host.preferWebsockets(),
 						// Route every summarization HTTP request through the
 						// session's side-stream transport so the provider
 						// concurrency cap (e.g. providers.ollama-cloud.maxConcurrency)
