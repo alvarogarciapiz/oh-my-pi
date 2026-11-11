@@ -80,6 +80,7 @@
 - Compaction summaries (handoff and soft) now end with three blocks built from the summarized history rather than written by the model: exact identifiers taken from full, untruncated tool output (error lines, commit/container hashes, issue and ticket refs, URLs), your own messages quoted verbatim, and a pointer to `history://current/full`; all three carry over to later compactions within fixed budgets
 - `history://current/full` (this session's whole uncompacted branch, readable with `read` and `grep`) now works in every session that owns its branch, not only with `compaction.experimentalContextManagement`
 - The `edit` tool in `replace` mode and the `grep`, `find` and `bash` tools now carry worked call examples in their descriptions
+- Subagent results up to 11,500 characters now reach the parent whole instead of as a 5,000-character preview pointing at `agent://<id>`; an envelope whose verification, error or merge summary would exceed async delivery still falls back to the preview (upstream a88548f310, 2e0a3b65ca, ec1eae8f3d)
 ### Fixed
 
 - Fixed subagents that were cancelled, interrupted, timed out, or killed refusing messages as hard-aborted; a message or Agent Hub revive now resumes them from their transcript (upstream ae29413e87)
