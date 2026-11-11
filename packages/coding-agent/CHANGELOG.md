@@ -86,6 +86,7 @@
 ### Fixed
 
 - Fixed `read` on a directory hiding `node_modules`, `.git`, build outputs and caches; explicit directory listings now show every child, while the startup workspace tree still prunes them (upstream #87/dcb4d4a5c4, N-40)
+- Fixed hashline edits anchored on a line that `read` or `grep` showed cut at the column cap dropping that line's unseen tail; only fully displayed rows count as seen, and such an edit asks for a `:raw` read of the line first (upstream #15649/818cf7fb77, N-37)
 - Fixed `edit` moves dropping executable permissions in hashline, patch, and apply_patch modes (upstream #16042, N-37)
 - Fixed `write` replacing a CRLF or UTF-8 BOM file with LF text rewriting every line ending and dropping the BOM; it now keeps the replaced file's CRLF line endings and BOM, as `edit` does, and says so in its result (upstream #16575, N-37)
 - Fixed a `read` range whose leading context line is too wide for the page hiding the requested lines; the read now retries from the requested line, and `write` only treats a bracketed `[Some lines truncated to …]` line as the column-cap notice (upstream 1e479b58d7, N-37)

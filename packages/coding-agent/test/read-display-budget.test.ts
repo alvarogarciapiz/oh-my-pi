@@ -4,6 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { AgentToolResult } from "@oh-my-pi/pi-agent-core";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
+import { EditTool } from "@oh-my-pi/pi-coding-agent/edit";
 import type { ToolSession } from "@oh-my-pi/pi-coding-agent/tools";
 import { ReadTool, SNAPSHOT_MAX_BYTES } from "@oh-my-pi/pi-coding-agent/tools/read";
 import { wrapToolWithMetaNotice } from "@oh-my-pi/pi-coding-agent/tools/output-meta";
@@ -123,6 +124,14 @@ describe("read charges column-cut lines their displayed width", () => {
 		const text = await read(createSession(dir), big);
 		expect(rows(text).size).toBe(300);
 		expect(text.split("\n")[0]).not.toMatch(/^\[[^\]]*#[0-9A-F]{4}\]$/);
+	});
+
+	it("still refuses an edit anchored on the cut line", async () => {
+		const session = createSession(dir);
+		const header = (await read(session, small)).split("\n")[0]!;
+		const result = await new EditTool(session, "hashline").execute("edit", { input: `${header}\nCUT 151.=151\n` });
+		expect(textOutput(result)).toContain("small.txt:151:raw");
+		expect(await fs.readFile(small, "utf8")).toBe(SMALL_SOURCE);
 	});
 
 	it("keeps a raw read of the wide line byte-capped and uncut", async () => {
