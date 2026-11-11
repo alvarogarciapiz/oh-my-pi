@@ -81,6 +81,7 @@
 - The `edit` tool in `replace` mode and the `grep`, `find` and `bash` tools now carry worked call examples in their descriptions
 ### Fixed
 
+- Fixed `/session delete` from RPC/ACP hosts leaving the live agent attached to the deleted file: the session now switches to a new, resumable session before the file is deleted and reports the new session id and path
 - Fixed SDK embedders leaking every disposed `AgentSession` that owned its MCP manager, so long-lived processes that create and dispose many sessions grew memory without bound
 - Fixed large session files ending in a truncated record not being repaired on load, unlike small ones
 - Fixed a rewritten session file being published with a partial transcript when a backpressured streamed write failed; every write is now confirmed before the file replaces the old one
