@@ -27,6 +27,7 @@ import {
 	parseImageMetadata,
 	prompt,
 	readImageMetadata,
+	untilAborted,
 } from "@oh-my-pi/pi-utils";
 import {
 	cfgIdaAvailable,
@@ -953,6 +954,17 @@ async function assessLocalReadSpeculation(
 	};
 }
 
+/** Whether `readPath` is one web URL, whose fetch reads nothing an earlier call could have changed. */
+function isSingleWebUrl(readPath: string): boolean {
+	if (readPath.includes(";")) return false;
+	try {
+		return parseReadUrlTarget(readPath) !== null;
+	} catch {
+		// A malformed URL selector: the read reports it.
+		return false;
+	}
+}
+
 /**
  * Read tool implementation.
  *
@@ -1648,6 +1660,10 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 		onUpdate?: AgentToolUpdateCallback<ReadToolDetails>,
 		toolContext?: AgentToolContext,
 	): Promise<AgentToolResult<ReadToolDetails>> {
+		// Wait for earlier writing calls of the same message running beside this
+		// read, so `[bash "printf new > f", read "f"]` reads what bash wrote.
+		const earlierEffects = isSingleWebUrl(params.path) ? undefined : toolContext?.toolCall?.earlierEffectsSettled;
+		if (earlierEffects) await untilAborted(signal, earlierEffects);
 		const result = await this.#executeInner(toolCallId, params, signal, onUpdate, toolContext);
 		const readFsPath = readDetailsLinkPath(result.details);
 		if (result.isError !== true && readFsPath && path.isAbsolute(readFsPath)) {

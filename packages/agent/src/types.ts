@@ -659,6 +659,8 @@ export interface ToolCallContext {
 	toolCalls: Array<{ id: string; name: string }>;
 	/** Provider-native metadata for the current call, when present. */
 	providerMetadata?: ToolCallProviderMetadata;
+	/** Settles once every earlier non-read call of the same message running beside this one has finished. */
+	earlierEffectsSettled?: Promise<void>;
 	/**
 	 * Cooperative steering signal: aborted when a queued user/steering message
 	 * (or an interrupting peer IRC) is detected while this tool batch runs.

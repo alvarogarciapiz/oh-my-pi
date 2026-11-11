@@ -1,7 +1,7 @@
 import {
 	type AgentTool,
 	type AgentToolResult,
-	resolveToolConcurrencyMode,
+	resolveToolConcurrency,
 	validateAgentToolArguments,
 } from "@oh-my-pi/pi-agent-core";
 import { type ImageContent, type TSchema, toolWireSchema, validateJsonSchemaValue } from "@oh-my-pi/pi-ai";
@@ -346,7 +346,7 @@ export async function callSessionTool(name: string, args: unknown, options: Tool
 	}
 	const release = await options.scheduler?.acquire(
 		// Validated against the tool's object parameter schema above.
-		resolveToolConcurrencyMode(tool.concurrency, validatedArgs as Record<string, unknown>),
+		resolveToolConcurrency(tool, validatedArgs as Record<string, unknown>),
 		options.signal,
 	);
 	try {
