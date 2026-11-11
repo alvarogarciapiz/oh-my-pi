@@ -82,7 +82,6 @@
 
 - Background compaction now keeps its provider session separate from the live turn while sharing its prompt-cache routing key
 - Automatic handoff compaction keeps the live system prompt, including extension overrides, so generating the summary can reuse the current prompt cache
-- Session folders inside home whose names begin with two dots now use the home-relative history bucket
 - Fixed the system prompt claiming user content is sanitized: instructions found in tool output, web pages, fetched documents, MCP results and ordinary files are now treated as data, never obeyed
 - Fixed skill self-improvement silently dropping an edit when the curator sent several edits to one skill file in the same reply
 - Fixed the agent deleting production resources without confirmation on open-ended requests such as "clean up the old resources": it now lists the exact targets with evidence and asks first, while requests that name exact targets still run without confirmation
