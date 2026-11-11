@@ -10,6 +10,7 @@
 ### Fixed
 
 - Fixed compaction persisting summaries cut off by the output-token limit: a truncated summary or handoff is retried once with a larger budget and no reasoning, then rejected so the next compaction method takes over
+- Fixed compaction discarding the completed summary when the optional short summary fails or returns no answer; compaction now completes without a short summary, and cancellation still cancels it (upstream #16942)
 
 ## [18.9.0] - 2026-10-11
 
