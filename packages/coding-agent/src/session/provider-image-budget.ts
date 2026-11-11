@@ -123,6 +123,11 @@ function clampImages(context: Context, state: ImageBudgetState): Context {
 	return { ...context, messages };
 }
 
+/** Per-request image budget for `model`: its configured `imageCountBudget`, else the provider default. */
+export function modelImageBudget(model: Model): number {
+	return model.imageCountBudget ?? providerImageBudget(model.provider);
+}
+
 /**
  * Drops oldest transient image blocks so outgoing vision requests fit the active provider's image cap.
  *
@@ -133,7 +138,7 @@ function clampImages(context: Context, state: ImageBudgetState): Context {
 export function clampProviderContextImages(context: Context, model: Model): Context {
 	if (!model.input.includes("image")) return context;
 	const totalImages = countImages(context);
-	const remainingDrops = totalImages - providerImageBudget(model.provider);
+	const remainingDrops = totalImages - modelImageBudget(model);
 	if (remainingDrops <= 0) return context;
 	return clampImages(context, { remainingDrops, inlineBytes: 0, byteBudget: Number.POSITIVE_INFINITY, model });
 }

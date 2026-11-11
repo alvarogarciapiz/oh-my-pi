@@ -4,6 +4,7 @@
 
 ### Added
 
+- Added `imageCountBudget` to custom models and `modelOverrides` in models.yml: a positive integer that replaces the provider's default per-request image budget, so a gateway with a higher limit keeps every image (upstream #15969)
 - Added `archive.find(query)` and `archive.open(id, {line})` in eval: verbatim full-text search over past sessions (assistant text, tool calls and results, summaries), one ranked row per session with a snippet and recap, indexed incrementally in a background worker (`archive.contentSearch`, on by default; `archive.indexThinking` opt-in). Without eval the same search is the `session_search` tool
 - Added the shared `team_task` board (`task.team.enabled`, on by default when subagents are possible): agents in one tree create, claim and complete tasks with dependencies, compare-and-set revisions and write-scope overlap warnings; state lives in the root session
 - Added automatic nested instructions (`contextFiles.nestedAutoInject`, on by default): the first `read`/`write`/`edit` inside a subdirectory injects its `AGENTS.md`/`CLAUDE.md` content (and later updates or removals) without an extra read; capped by `contextFiles.nestedMaxBytes`

@@ -1525,6 +1525,8 @@ export interface Model<TApi extends Api = Api> {
 	 * than OMP's general image pipeline. `stb` local backends reject WebP.
 	 */
 	imageInputDecoder?: "stb";
+	/** Max images the model accepts per request; overrides the provider default. */
+	imageCountBudget?: number;
 	/**
 	 * Native provider tool-call support. `false` is the only unsupported signal:
 	 * `true` and `undefined` both mean callers may use native tools. Catalog and
