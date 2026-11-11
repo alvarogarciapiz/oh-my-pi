@@ -1,5 +1,5 @@
 import { afterAll, afterEach, describe, expect, it, vi } from "bun:test";
-import { Agent, type AsideMessage } from "@oh-my-pi/pi-agent-core";
+import { Agent, type AsideBoundary, type AsideMessage } from "@oh-my-pi/pi-agent-core";
 import type { AssistantMessage } from "@oh-my-pi/pi-ai";
 import { getBundledModel } from "@oh-my-pi/pi-catalog/models";
 import { ModelRegistry } from "@oh-my-pi/pi-coding-agent/config/model-registry";
@@ -32,7 +32,7 @@ const MINUTE = 60_000;
 describe("AgentSession scope checkpoint", () => {
 	let tempDir: TempDir | undefined;
 	let session: AgentSession | undefined;
-	let asideProvider: (() => AsideMessage[] | Promise<AsideMessage[]>) | undefined;
+	let asideProvider: ((boundary: AsideBoundary) => AsideMessage[] | Promise<AsideMessage[]>) | undefined;
 	let clock = 0;
 
 	function setup(agentKind: "main" | "sub" = "main"): AgentSession {
@@ -108,7 +108,7 @@ describe("AgentSession scope checkpoint", () => {
 	async function drain(customType = "scope-checkpoint"): Promise<CustomMessage[]> {
 		if (!asideProvider) throw new Error("aside provider was never captured");
 		const out: CustomMessage[] = [];
-		for (const entry of await asideProvider()) {
+		for (const entry of await asideProvider("work")) {
 			const message = typeof entry === "function" ? entry() : entry;
 			if (message?.role === "custom" && (message as CustomMessage).customType === customType) {
 				out.push(message as CustomMessage);

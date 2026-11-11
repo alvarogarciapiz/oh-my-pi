@@ -113,6 +113,7 @@ function createSession(): AgentSession {
 		abort: async () => {},
 		dispose: async () => {},
 		setIrcWakeTurnObserver: () => {},
+		holdIrcWakes: () => () => {},
 		trackIrcReply: () => {},
 		subscribeRunState: () => () => {},
 		getToolReceipts: () => RECEIPTS,

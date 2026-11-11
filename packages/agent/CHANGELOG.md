@@ -6,6 +6,7 @@
 
 - Added `estimateAdaptiveReserveTokens()` and `CompactionSettings.adaptiveReserveTokens` for usage-based compaction reserves, `resolveToolConcurrencyMode()`, and the optional `AgentTool.outputSchema`
 - Added the `pinnedToolDefinitions` agent option and `getSentToolDefinitions()`, so a child agent can declare its parent's exact tool definitions and reuse the parent's prompt cache
+- Aside providers (`AgentLoopConfig.getAsideMessages`, `Agent.setAsideMessageProvider`) now receive the polled boundary (`AsideBoundary`: `"work"` after tool calls, `"stop"` at the end of a turn), so they can keep a message out of a finished turn (upstream #16583)
 
 ### Fixed
 

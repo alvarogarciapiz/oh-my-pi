@@ -22,18 +22,27 @@ export interface IrcBridgeHost {
 
 /** Owns incoming IRC queues and the session's non-interrupting aside queue. */
 export class IrcBridge {
+	/** A subagent's records from anyone but its parent: answered in their own turn, never by
+	 *  extending a finished one (whose text is the subagent's result). */
+	readonly #peerMessages = new WeakSet<AgentMessage>();
 	readonly #host: IrcBridgeHost;
 	#interrupts: AgentMessage[] = [];
 	#asides: AgentMessage[] = [];
-	/** Wake-intended records parked while a pooled yield contract owns the worker.
-	 *  Pooled turns must not flush these (no observer would reply to the sender);
-	 *  they resume into a monitored wake once the contract clears. */
+	/** Wake-intended records parked while a pooled yield contract owns the worker or a
+	 *  driven run holds wakes (`AgentSession.holdIrcWakes`). Turns must not flush these
+	 *  (no observer would reply to the sender); they resume into a monitored wake once
+	 *  the contract clears or the hold is released. */
 	#deferredWakes: AgentMessage[] = [];
 	/** In-flight wake-turn relays owed to peers. */
 	readonly #pendingReplies = new Set<Promise<void>>();
 
 	constructor(host: IrcBridgeHost) {
 		this.#host = host;
+	}
+
+	/** Whether `record` came to a subagent from anyone but its parent, or as a broadcast leg. */
+	isPeerMessage(record: AgentMessage): boolean {
+		return this.#peerMessages.has(record);
 	}
 
 	/** Whether an incoming peer message can interrupt a wait. */
@@ -64,8 +73,16 @@ export class IrcBridge {
 		void pending.finally(() => this.#pendingReplies.delete(pending));
 	}
 
-	/** Takes every queued IRC record in interrupt-before-aside order. */
-	drainPending(): AgentMessage[] {
+	/** Takes queued IRC records in interrupt-before-aside order; `keepPeerMessages` leaves a
+	 *  subagent's non-parent messages queued for their own wake turn. */
+	drainPending(options?: { keepPeerMessages?: boolean }): AgentMessage[] {
+		if (options?.keepPeerMessages) {
+			const isPeer = (record: AgentMessage) => this.isPeerMessage(record);
+			const records = [...this.#interrupts, ...this.#asides].filter(record => !isPeer(record));
+			this.#interrupts = this.#interrupts.filter(isPeer);
+			this.#asides = this.#asides.filter(isPeer);
+			return records;
+		}
 		const records = [...this.#interrupts, ...this.#asides];
 		this.#interrupts = [];
 		this.#asides = [];
@@ -182,7 +199,27 @@ export class IrcBridge {
 		if (this.#host.isDisposed()) throw new Error("Recipient session is disposed.");
 		const streaming = this.#host.isStreaming();
 		const planModeIdle = !streaming && this.#host.planModeEnabled();
-		const fromParent = AgentRegistry.global().get(msg.to)?.parentId === msg.from;
+		const registry = AgentRegistry.global();
+		const parentId = registry.get(msg.to)?.parentId;
+		const fromParent = parentId === msg.from;
+		// A subagent's result answers its parent, and its run may be waiting on its
+		// own descendants, whose questions it must see in-run. Anyone else's
+		// message, or a broadcast leg (which asks no one in particular), gets a
+		// turn of its own.
+		let fromDescendant = false;
+		const seen = new Set<string>();
+		for (
+			let id = registry.get(msg.from)?.parentId;
+			id !== undefined && !seen.has(id);
+			id = registry.get(id)?.parentId
+		) {
+			if (id === msg.to) {
+				fromDescendant = true;
+				break;
+			}
+			seen.add(id);
+		}
+		const peerMessage = msg.broadcast === true || (parentId !== undefined && !fromParent && !fromDescendant);
 		// An idle subagent runs a monitored wake turn whose output is relayed
 		// back to the sender (task executor `relayWakeTurnOutput`); the main
 		// agent, mid-turn asides, relays and broadcast legs have no such relay.
@@ -216,9 +253,10 @@ export class IrcBridge {
 			attribution: "agent",
 			timestamp: msg.ts,
 		};
+		if (peerMessage) this.#peerMessages.add(record);
 		void this.#host.emitSessionEvent({ type: "irc_message", message: record });
 		if (streaming) {
-			if (fromParent) {
+			if (fromParent && !peerMessage) {
 				this.#host.agent.steer({
 					role: "user",
 					content: prompt.render(parentIrcSteerTemplate, { from: msg.from, message: envelopeBody }),

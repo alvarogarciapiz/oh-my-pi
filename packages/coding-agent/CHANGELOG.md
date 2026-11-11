@@ -83,6 +83,7 @@
 - Subagent results up to 11,500 characters now reach the parent whole instead of as a 5,000-character preview pointing at `agent://<id>`; an envelope whose verification, error or merge summary would exceed async delivery still falls back to the preview (upstream a88548f310, 2e0a3b65ca, ec1eae8f3d)
 ### Fixed
 
+- Fixed a subagent's `yield` result reaching its parent as its reply to a peer message or `agent://all` broadcast that arrived as it finished; such messages now get a wake turn of their own after the result, and a peer that wrote directly still receives the reply (upstream #16583)
 - Fixed subagents that were cancelled, interrupted, timed out, or killed refusing messages as hard-aborted; a message or Agent Hub revive now resumes them from their transcript (upstream ae29413e87)
 - Fixed a task worker messaged while still starting up running without its `tasks[].task` assignment; the message now waits for the assignment's turn (upstream b3baadf2a3)
 - Fixed task job deliveries naming `agent://<job-id>`/`history://<job-id>` for jobs whose id is not the agent id, and offering `agent://` for turns that published no output (upstream #17112)

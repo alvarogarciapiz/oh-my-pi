@@ -119,6 +119,7 @@ function createRevivedSession(activeToolNames: string[][], extensionRunner?: unk
 		setIrcWakeTurnObserver: (next: IrcWakeObserver | undefined) => {
 			observer = next;
 		},
+		holdIrcWakes: () => () => {},
 		trackIrcReply: (pending: Promise<void>) => {
 			trackedReplies.push(pending);
 		},

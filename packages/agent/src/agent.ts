@@ -59,6 +59,7 @@ import type {
 	AgentTool,
 	AgentToolContext,
 	AgentTurnEndContext,
+	AsideBoundary,
 	AsideMessage,
 	PrepareQueuedMessages,
 	SpeculativeToolExecutionConfig,
@@ -510,7 +511,7 @@ export class Agent {
 	#onModelCallSystemPrompt?: (systemPrompt: string[]) => void;
 	#beforeModelCall?: AgentBeforeModelCall;
 	#additionalBeforeModelCalls = new Set<AgentBeforeModelCall>();
-	#asideMessageProvider?: () => AsideMessage[] | Promise<AsideMessage[]>;
+	#asideMessageProvider?: (boundary: AsideBoundary) => AsideMessage[] | Promise<AsideMessage[]>;
 	#telemetry?: AgentLoopConfig["telemetry"];
 	#appendOnlyContext?: AppendOnlyContextManager;
 	#beforeQueuedMessageDequeueHooks = new Set<(signal?: AbortSignal) => Promise<void> | void>();
@@ -1217,7 +1218,9 @@ export class Agent {
 	 * aborts foreground tools; an interruptible `wait` may end early through the
 	 * peek hooks. See `AgentLoopConfig.getAsideMessages`.
 	 */
-	setAsideMessageProvider(fn: (() => AsideMessage[] | Promise<AsideMessage[]>) | undefined): void {
+	setAsideMessageProvider(
+		fn: ((boundary: AsideBoundary) => AsideMessage[] | Promise<AsideMessage[]>) | undefined,
+	): void {
 		this.#asideMessageProvider = fn;
 	}
 
@@ -1972,7 +1975,7 @@ export class Agent {
 			hasBackgroundCompletions: this.hasBackgroundCompletions,
 			hasQueuedAsides: this.hasQueuedAsides,
 			getFollowUpMessages: signal => this.#dequeueFollowUpMessagesAfterHooks(signal ?? loopSignal),
-			getAsideMessages: async () => (await this.#asideMessageProvider?.()) ?? [],
+			getAsideMessages: async boundary => (await this.#asideMessageProvider?.(boundary)) ?? [],
 			onBeforeYield: () => this.#onBeforeYield?.(),
 			telemetry: this.#telemetry,
 		};
