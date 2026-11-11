@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- LiteLLM OpenAI-compatible side requests now keep the same cache-affinity header as the live turn while retaining independent transport session IDs
+- LiteLLM OpenAI-compatible side requests now keep the same cache-affinity header as the live turn while retaining independent transport session IDs ([#3](https://github.com/javimp2003/oh-my-pi/pull/3) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
 - Fixed parallel tool calls from OpenAI-compatible gateways that reuse one stream index or send no ids (seen with GLM via LiteLLM) being merged into a single call that failed with "Tool call arguments are not valid JSON … Unexpected trailing characters"; each call now runs separately
 
 ## [18.9.1] - 2026-10-11
