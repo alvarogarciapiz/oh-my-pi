@@ -85,6 +85,7 @@
 - The `bash` tool now runs on pi's own bash 5.3 engine (replacing brush) with the v18.18.9 native runtime: per-run stdio, EXIT traps, `env -i`, `timeout`/`nohup`/`git` as shell tools, and native filesystem/search performance work; the old filesystem scan cache invalidation hook is gone, and SIXEL encodes take the terminal background colour (upstream 44711a78c1 and the v18.18.9 `crates/` + `packages/natives` sync, N-45/N-46/N-47)
 ### Fixed
 
+- Fixed `read` on a directory hiding `node_modules`, `.git`, build outputs and caches; explicit directory listings now show every child, while the startup workspace tree still prunes them (upstream #87/dcb4d4a5c4, N-40)
 - Fixed `edit` moves dropping executable permissions in hashline, patch, and apply_patch modes (upstream #16042, N-37)
 - Fixed `write` replacing a CRLF or UTF-8 BOM file with LF text rewriting every line ending and dropping the BOM; it now keeps the replaced file's CRLF line endings and BOM, as `edit` does, and says so in its result (upstream #16575, N-37)
 - Fixed a `read` range whose leading context line is too wide for the page hiding the requested lines; the read now retries from the requested line, and `write` only treats a bracketed `[Some lines truncated to …]` line as the column-cap notice (upstream 1e479b58d7, N-37)
