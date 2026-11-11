@@ -119,6 +119,13 @@ GLM-5.3-Flash combines KDA recurrent state with sparse MLA, so validate prefix-c
 
 If LMCache is installed, its [GLM-5.3-Flash recipe](https://docs.lmcache.ai/recipes/glm5_3_flash.html) has additional hybrid-state requirements and version-specific caveats. Do not apply LMCache flags to a plain vLLM deployment.
 
+For a **single vLLM replica running 0.30.0**, pod affinity does not improve cache hits: all requests already reach the same replica. Prioritize the resolved engine configuration and cache correctness:
+
+- Confirm prefix caching is enabled and the hybrid recurrent-state cache resolves to `align`. Both `--enable-prefix-caching` and `--mamba-cache-mode align` exist in [0.30.0](https://docs.vllm.ai/en/v0.30.0/configuration/engine_args/#cacheconfig); inspect startup configuration before adding overrides. Do not copy newer-version cache flags blindly.
+- Upstream [issue #59115](https://github.com/vllm-project/vllm/issues/59115) reports GLM-5.3-Flash failures on 0.30.0 with long mixed prefill/decode workloads. Maintainers identify fixes for an out-of-bounds kpool access and prefix-cache corruption affecting MTP. This is configuration-dependent evidence, not proof that every 0.30.0 deployment is affected.
+- Validate a patched stable engine before performance tuning. The [0.31.0 release](https://github.com/vllm-project/vllm/releases/tag/v0.31.0) explicitly includes the related fixes (#57317, #57477) and additional GLM recurrent-state/speculative-decoding corrections. Test compatibility and correctness on the actual GPU/checkpoint before upgrading production.
+- Compare warmed handoff and post-compaction requests separately under the same load and reasoning effort. Cache eviction and recurrent-state checkpoint boundaries can still limit reuse on one replica.
+
 ### Compaction shape (visual)
 
 ```text
