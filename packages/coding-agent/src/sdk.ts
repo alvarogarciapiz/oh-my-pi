@@ -1874,17 +1874,6 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 	};
 	const activeRepoContextPromise = logger.time("resolveActiveRepoContext", resolveRepoContext, cwd);
 	activeRepoContextPromise.catch(() => {});
-	// Coding-prompt workspace snapshot, taken once per cwd so prompt rebuilds stay byte-stable.
-	const snapshotByCwd = new Map<string, Promise<WorkspaceSnapshot | null>>();
-	const codeSnapshotFor = (dir: string): Promise<WorkspaceSnapshot | null> => {
-		let pending = snapshotByCwd.get(dir);
-		if (!pending) {
-			pending = logger.time("resolveWorkspaceSnapshot", resolveWorkspaceSnapshot, dir);
-			snapshotByCwd.set(dir, pending);
-		}
-		return pending;
-	};
-	if (cfgCodingGuidance.get(settings)) codeSnapshotFor(cwd).catch(() => {});
 	const watchdogFilesPromise = logger.time("discoverWatchdogFiles", () => discoverWatchdogFiles(cwd, agentDir));
 	watchdogFilesPromise.catch(() => {});
 	const advisorConfigsPromise = logger.time("discoverAdvisorConfigs", () => discoverAdvisorConfigs(cwd, agentDir));
@@ -1918,6 +1907,25 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 		logger.time("sessionManager", () =>
 			SessionManager.create(cwd, SessionManager.getDefaultSessionDir(cwd, agentDir)),
 		);
+	// Freeze project facts and the repository map within a conversation, including
+	// prompt rebuilds after compaction. /new must observe the current layout.
+	let snapshotSessionId = sessionManager.getSessionId();
+	const snapshotByCwd = new Map<string, Promise<WorkspaceSnapshot | null>>();
+	const codeSnapshotFor = (dir: string): Promise<WorkspaceSnapshot | null> => {
+		const sessionId = sessionManager.getSessionId();
+		if (snapshotSessionId !== sessionId) {
+			snapshotByCwd.clear();
+			snapshotSessionId = sessionId;
+		}
+		const key = path.resolve(dir);
+		let pending = snapshotByCwd.get(key);
+		if (!pending) {
+			pending = logger.time("resolveWorkspaceSnapshot", resolveWorkspaceSnapshot, key);
+			snapshotByCwd.set(key, pending);
+		}
+		return pending;
+	};
+	if (cfgCodingGuidance.get(settings)) codeSnapshotFor(sessionManager.getCwd()).catch(() => {});
 	const configuredDirs = options.additionalDirectories
 		? options.additionalDirectories
 		: cfgWorkspaceAdditionalDirectories.get(settings);

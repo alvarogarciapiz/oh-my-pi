@@ -78,6 +78,8 @@ Compaction/context maintenance can run in six ways:
 
 ### Prefix caching with open-model servers
 
+Coding sessions include a brief repository map in the initial `<workspace>` system-prompt snapshot, alongside detected manifests and verification commands. It uses the existing ignore-aware workspace walker, includes at most two directory levels, and caps the map at 32 lines and 2,400 characters. Each root entry gets one line with a sample of its children, so a large subtree cannot crowd out later packages. No model request is needed. Names are ordered independently of modification times, and file contents are not included. The snapshot stays fixed for the conversation, including compaction and prompt rebuilds; new conversations take a fresh snapshot. Later file observations supersede the initial map. `codingGuidance: false` omits it; `includeWorkspaceTree` still controls the separate detailed tree. This preserves the map's eligible prefix, not a guarantee that the backend keeps its KV blocks resident.
+
 There are two separate cache boundaries:
 
 - **Generating the summary:** handoff sends the live system prompt, normalized tools and transformed conversation, followed by a summary instruction. Automatic handoff and manual `/compact` using the handoff method preserve the live system prompt, including extension overrides. The request shares the live `promptCacheKey` but uses a separate provider `sessionId`, so background generation does not interleave with the active transport session.

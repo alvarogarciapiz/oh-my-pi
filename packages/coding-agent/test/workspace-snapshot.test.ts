@@ -19,6 +19,8 @@ describe("resolveWorkspaceSnapshot", () => {
 		expect(snapshot?.manifests).toContain("package.json");
 		expect(snapshot?.packageManagers).toEqual(["bun"]);
 		expect(snapshot?.verifyCommands).toEqual(["bun run test", "bun run lint"]);
+		expect(snapshot?.repositoryMap).toContain("src/");
+		expect(snapshot?.repositoryMap).toContain("a.ts");
 	});
 
 	it("returns null for a folder that only holds an AGENTS.md", async () => {

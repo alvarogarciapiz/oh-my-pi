@@ -228,4 +228,39 @@ describe("buildWorkspaceTree", () => {
 
 		expect(tree.rendered).toMatch(/^\.\n  - recent\.txt 1B \d+[smhdw]+ ago$/u);
 	});
+
+	it("keeps the compact map unchanged when file contents and modification times change", async () => {
+		const cwd = await makeTempDir();
+		await Bun.write(path.join(cwd, ".gitignore"), "ignored/\n");
+		await Bun.write(path.join(cwd, "ignored", "private.txt"), "omitted");
+		await Bun.write(path.join(cwd, "node_modules", "dependency.js"), "omitted");
+		await writeFileWithMtime(path.join(cwd, "src", "main.ts"), "old", 1_700_000_000_000);
+		await writeFileWithMtime(path.join(cwd, "docs", "guide.md"), "guide", 1_700_000_001_000);
+		const first = await buildWorkspaceTree(cwd, { compact: true });
+
+		await writeFileWithMtime(path.join(cwd, "src", "main.ts"), "different content and size", Date.now());
+		const second = await buildWorkspaceTree(cwd, { compact: true });
+
+		expect(second.rendered).toBe(first.rendered);
+		expect(first.rendered).toContain("main.ts");
+		expect(first.rendered).toContain("guide.md");
+		expect(first.rendered).not.toContain("ignored");
+		expect(first.rendered).not.toContain("dependency.js");
+		expect(lineIndex(first.rendered, "docs/")).toBeLessThan(lineIndex(first.rendered, "src/"));
+	});
+
+	it("bounds compact maps for large repositories and unusually long filenames", async () => {
+		const cwd = await makeTempDir();
+		for (let directory = 0; directory < 15; directory++) {
+			for (let file = 0; file < 8; file++) {
+				await Bun.write(path.join(cwd, `dir-${directory}`, `${file}-${"x".repeat(180)}.ts`), "source");
+			}
+		}
+
+		const tree = await buildWorkspaceTree(cwd, { compact: true });
+
+		expect(tree.rendered.length).toBeLessThanOrEqual(2400);
+		expect(tree.totalLines).toBeLessThanOrEqual(32);
+		expect(tree.truncated).toBe(true);
+	});
 });
