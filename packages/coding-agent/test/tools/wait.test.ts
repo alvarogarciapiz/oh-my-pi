@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "bun:test";
-import { TOOL_INTERRUPT_ABORT_REASON } from "@oh-my-pi/pi-agent-core";
+import { type Agent, type AgentMessage, TOOL_INTERRUPT_ABORT_REASON } from "@oh-my-pi/pi-agent-core";
 import { AsyncJobManager } from "@oh-my-pi/pi-coding-agent/async/job-manager";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import { IrcBus } from "@oh-my-pi/pi-coding-agent/irc/bus";
@@ -7,6 +7,8 @@ import * as daemonClient from "@oh-my-pi/pi-coding-agent/launch/client";
 import type { DaemonBrokerClient } from "@oh-my-pi/pi-coding-agent/launch/client";
 import { AgentRegistry } from "@oh-my-pi/pi-coding-agent/registry/agent-registry";
 import type { AgentSession } from "@oh-my-pi/pi-coding-agent/session/agent-session";
+import { IrcBridge, type IrcBridgeHost } from "@oh-my-pi/pi-coding-agent/session/irc-bridge";
+import type { CustomMessage } from "@oh-my-pi/pi-coding-agent/session/messages";
 import type { ToolSession } from "@oh-my-pi/pi-coding-agent/tools";
 import { WaitTool } from "@oh-my-pi/pi-coding-agent/tools/wait";
 import type { IrcMessage } from "@oh-my-pi/pi-tui/tools/irc";
@@ -19,6 +21,24 @@ function session(manager?: AsyncJobManager, agentId = "Main", launch = false): T
 		asyncJobManager: manager,
 		getAgentId: () => agentId,
 	} as unknown as ToolSession;
+}
+
+// Lets every pending continuation run, so the wait reaches its next block before the test acts.
+async function flushMicrotasks(): Promise<void> {
+	for (let i = 0; i < 100; i++) await Promise.resolve();
+}
+
+/** Whether `promise` is still pending once already-queued work has run. */
+async function stillPending(promise: Promise<unknown>): Promise<boolean> {
+	let settled = false;
+	const mark = () => {
+		settled = true;
+	};
+	void promise.then(mark, mark);
+	const checked = Promise.withResolvers<void>();
+	setImmediate(checked.resolve);
+	await checked.promise;
+	return !settled;
 }
 
 describe("wait", () => {
@@ -143,6 +163,138 @@ describe("wait", () => {
 		expect(result.details?.waited).toMatchObject({ from: "Peer", body: "the file is yours" });
 		expect(manager.getJob(id)?.status).toBe("running");
 		manager.cancel(id);
+	});
+
+	// Fake timers freeze the settle window: a wait that ends without the clock advancing added no delay.
+	test("jobs finishing moments apart are reported by one wait", async () => {
+		vi.useFakeTimers();
+		const manager = new AsyncJobManager({ onJobComplete: () => {} });
+		const a = Promise.withResolvers<string>();
+		const b = Promise.withResolvers<string>();
+		const first = manager.register("bash", "a", async () => a.promise, { ownerId: "Main" });
+		const second = manager.register("bash", "b", async () => b.promise, { ownerId: "Main" });
+		const waiting = new WaitTool(session(manager)).execute("wait-1", {});
+		a.resolve("a done");
+		await flushMicrotasks();
+		b.resolve("b done");
+		const jobs = (await waiting).details?.jobs ?? [];
+		expect(jobs.find(job => job.id === first)).toMatchObject({ status: "completed", resultText: "a done" });
+		expect(jobs.find(job => job.id === second)).toMatchObject({ status: "completed", resultText: "b done" });
+	});
+
+	test("two jobs settling 300 ms apart return in one wait result", async () => {
+		vi.useFakeTimers();
+		const manager = new AsyncJobManager({ onJobComplete: () => {} });
+		const late = Promise.withResolvers<string>();
+		const first = manager.register("bash", "a", async () => "a done", { ownerId: "Main" });
+		const second = manager.register("bash", "b", async () => late.promise, { ownerId: "Main" });
+		let settled = false;
+		const waiting = new WaitTool(session(manager)).execute("wait-300", {}).finally(() => {
+			settled = true;
+		});
+		await flushMicrotasks();
+		vi.advanceTimersByTime(300);
+		await flushMicrotasks();
+		expect(settled).toBe(false);
+		late.resolve("b done");
+		const jobs = (await waiting).details?.jobs ?? [];
+		expect(jobs.find(job => job.id === first)).toMatchObject({ status: "completed", resultText: "a done" });
+		expect(jobs.find(job => job.id === second)).toMatchObject({ status: "completed", resultText: "b done" });
+	});
+
+	test("a job still running past the settle window does not hold the settled one back", async () => {
+		vi.useFakeTimers();
+		const manager = new AsyncJobManager({ onJobComplete: () => {} });
+		const slow = Promise.withResolvers<string>();
+		const done = manager.register("bash", "a", async () => "a done", { ownerId: "Main" });
+		const running = manager.register("bash", "b", async () => slow.promise, { ownerId: "Main" });
+		let settled = false;
+		const waiting = new WaitTool(session(manager)).execute("wait-1", {}).finally(() => {
+			settled = true;
+		});
+		await flushMicrotasks();
+		vi.advanceTimersByTime(1499);
+		await flushMicrotasks();
+		expect(settled).toBe(false);
+		vi.advanceTimersByTime(1);
+		const jobs = (await waiting).details?.jobs ?? [];
+		slow.resolve("b done");
+		expect(jobs.find(job => job.id === done)).toMatchObject({ status: "completed" });
+		expect(jobs.find(job => job.id === running)).toMatchObject({ status: "running" });
+	});
+
+	test("a single job adds no settle delay", async () => {
+		vi.useFakeTimers();
+		const manager = new AsyncJobManager({ onJobComplete: () => {} });
+		const id = manager.register("bash", "a", async () => "a done", { ownerId: "Main" });
+		const result = await new WaitTool(session(manager)).execute("wait-1", {});
+		expect(result.details?.jobs?.[0]).toMatchObject({ id, status: "completed" });
+	});
+
+	describe("a caller mid-turn", () => {
+		/** `Main` streaming through a real IRC bridge, so what reaches it queues for its next step boundary. */
+		function streamingMain(): IrcBridge {
+			const bridge = new IrcBridge({
+				agent: { steer: () => {} } as unknown as Agent,
+				isDisposed: () => false,
+				isStreaming: () => true,
+				planModeEnabled: () => false,
+				emitSessionEvent: async () => {},
+				wakeForIrc: () => {},
+			} as unknown as IrcBridgeHost);
+			const registry = AgentRegistry.global();
+			const session = {
+				isStreaming: true,
+				deliverIrcMessage: (msg: IrcMessage) => bridge.deliver(msg),
+			};
+			registry.register({
+				id: "Main",
+				displayName: "Main",
+				kind: "main",
+				status: "running",
+				session: session as unknown as AgentSession,
+			});
+			for (const id of ["Peer", "Other"]) {
+				registry.register({ id, displayName: id, kind: "sub", parentId: "Main", session: null });
+			}
+			return bridge;
+		}
+
+		const details = (records: AgentMessage[]) => records.map(record => (record as CustomMessage).details);
+
+		test("a broadcast leaves a wait on its own job blocking, and injects after it", async () => {
+			const bridge = streamingMain();
+			const manager = new AsyncJobManager({ onJobComplete: () => {} });
+			const build = Promise.withResolvers<string>();
+			const id = manager.register("bash", "build", async () => build.promise, { ownerId: "Main" });
+			const waiting = new WaitTool(session(manager)).execute("wait-chatter", {});
+			await IrcBus.global().send({ from: "Peer", to: "Main", body: "editing auth.ts", broadcast: true });
+			expect(await stillPending(waiting)).toBe(true);
+			// Nor may it cut the interruptible wait short from the agent loop.
+			expect(bridge.hasInterrupts()).toBe(false);
+			build.resolve("built");
+			const result = await waiting;
+			expect(result.details?.jobs?.[0]).toMatchObject({ id, status: "completed", resultText: "built" });
+			expect(result.details?.waited).toBeUndefined();
+			// It still reaches the caller, at its next step boundary.
+			expect(details(bridge.drainPending())).toMatchObject([
+				{ from: "Peer", message: "editing auth.ts", broadcast: true },
+			]);
+		});
+
+		test("a direct message still ends the wait after a broadcast", async () => {
+			const bridge = streamingMain();
+			const manager = new AsyncJobManager({ onJobComplete: () => {} });
+			const { promise } = Promise.withResolvers<string>();
+			const id = manager.register("bash", "build", async () => promise, { ownerId: "Main" });
+			const waiting = new WaitTool(session(manager)).execute("wait-direct", {});
+			await IrcBus.global().send({ from: "Peer", to: "Main", body: "editing auth.ts", broadcast: true });
+			await IrcBus.global().send({ from: "Other", to: "Main", body: "the file is yours" });
+			const result = await waiting;
+			expect(result.details?.waited).toMatchObject({ from: "Other", body: "the file is yours" });
+			expect(details(bridge.drainPending())).toMatchObject([{ from: "Peer", broadcast: true }]);
+			manager.cancel(id);
+		});
 	});
 
 	test("a hung daemon broker does not fail the wait; the job result still arrives", async () => {

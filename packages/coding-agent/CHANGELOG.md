@@ -81,6 +81,7 @@
 - `history://current/full` (this session's whole uncompacted branch, readable with `read` and `grep`) now works in every session that owns its branch, not only with `compaction.experimentalContextManagement`
 - The `edit` tool in `replace` mode and the `grep`, `find` and `bash` tools now carry worked call examples in their descriptions
 - Subagent results up to 11,500 characters now reach the parent whole instead of as a 5,000-character preview pointing at `agent://<id>`; an envelope whose verification, error or merge summary would exceed async delivery still falls back to the preview (upstream a88548f310, 2e0a3b65ca, ec1eae8f3d)
+- `wait` no longer ends on an `agent://all` broadcast (it reaches the agent after the wait returns, without interrupting it), and jobs settling within 1.5 s of the first come back in one result (upstream adcb8800b6, without the reply-wait cap change)
 ### Fixed
 
 - Fixed a subagent's `yield` result reaching its parent as its reply to a peer message or `agent://all` broadcast that arrived as it finished; such messages now get a wake turn of their own after the result, and a peer that wrote directly still receives the reply (upstream #16583)

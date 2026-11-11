@@ -25,6 +25,9 @@ export class IrcBridge {
 	/** A subagent's records from anyone but its parent: answered in their own turn, never by
 	 *  extending a finished one (whose text is the subagent's result). */
 	readonly #peerMessages = new WeakSet<AgentMessage>();
+	/** Queued broadcast legs: they ask nothing of the recipient, so they inject at the next
+	 *  step boundary like any record but never cut a `wait` short. */
+	readonly #quietRecords = new WeakSet<AgentMessage>();
 	readonly #host: IrcBridgeHost;
 	#interrupts: AgentMessage[] = [];
 	#asides: AgentMessage[] = [];
@@ -45,9 +48,9 @@ export class IrcBridge {
 		return this.#peerMessages.has(record);
 	}
 
-	/** Whether an incoming peer message can interrupt a wait. */
+	/** Whether an incoming message can interrupt a wait: anything queued but a broadcast leg. */
 	hasInterrupts(): boolean {
-		return this.#interrupts.length > 0;
+		return this.#interrupts.some(record => !this.#quietRecords.has(record));
 	}
 
 	/** Whether an aside is ready for step-boundary injection (not a parked wake). */
@@ -225,6 +228,9 @@ export class IrcBridge {
 		// agent, mid-turn asides, relays and broadcast legs have no such relay.
 		const relayOnStop =
 			!streaming && !planModeIdle && msg.to !== MAIN_AGENT_ID && msg.wakeRelay !== true && msg.broadcast !== true;
+		// A broadcast leg asks nothing of the recipient, so a busy one reads it at
+		// its next step boundary without being interrupted.
+		const quiet = msg.broadcast === true;
 		// The body is agent-authored (a peer's message, or a wake relay's
 		// `<task-result>` around a subagent's output), so it must not close the
 		// harness envelope it is rendered into or open a forged one, e.g. a parent
@@ -237,7 +243,7 @@ export class IrcBridge {
 				from: msg.from,
 				message: envelopeBody,
 				replyTo: msg.replyTo ?? "",
-				interrupting: streaming,
+				interrupting: streaming && !quiet,
 				relayOnStop,
 			}),
 			display: true,
@@ -265,6 +271,7 @@ export class IrcBridge {
 					steering: true,
 				});
 			} else {
+				if (quiet) this.#quietRecords.add(record);
 				this.#interrupts.push(record);
 			}
 			return "injected";
