@@ -264,6 +264,42 @@ describe("executeBash", () => {
 		expect(result.output.trim()).toBe("1:0:hello");
 	});
 
+	it("bypasses a configured git sequence.editor during interactive rebase", async () => {
+		if (process.platform === "win32" || !$which("git")) return;
+		const repoDir = path.join(tempDir, "repo");
+		const globalConfigPath = path.join(tempDir, "gitconfig");
+		fs.mkdirSync(repoDir);
+		fs.writeFileSync(globalConfigPath, "");
+		const marker = path.join(tempDir, "sequence-editor-ran");
+		const editorPath = path.join(tempDir, "sequence-editor.sh");
+		fs.writeFileSync(editorPath, `#!/bin/sh\ntouch ${shellQuote(marker)}\nexit 1\n`);
+		fs.chmodSync(editorPath, 0o755);
+		const sessionKey = `git-rebase-${path.basename(tempDir)}`;
+		const run = (command: string) =>
+			executeBash(command, {
+				cwd: repoDir,
+				timeout: 10_000,
+				sessionKey,
+				env: { GIT_CONFIG_GLOBAL: globalConfigPath, GIT_CONFIG_NOSYSTEM: "1" },
+			});
+		const setup = await run(
+			[
+				"git init -q -b main",
+				"git config user.email t@example.com",
+				"git config user.name t",
+				"echo first > first.txt && git add -A && git commit -qm first",
+				"echo second > second.txt && git add -A && git commit -qm second",
+				`git config sequence.editor ${shellQuote(editorPath)}`,
+			].join(" && "),
+		);
+		expect(setup).toMatchObject({ exitCode: 0 });
+
+		const rebase = await run("git rebase -i HEAD~1");
+
+		expect(rebase).toMatchObject({ exitCode: 0 });
+		expect(fs.existsSync(marker)).toBe(false);
+	});
+
 	it("runs non-bash shellPath commands through the configured shell", async () => {
 		if (process.platform === "win32") {
 			return;

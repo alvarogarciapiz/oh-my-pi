@@ -84,6 +84,11 @@ describe("buildNonInteractiveEnv", () => {
 	it("lets a per-command CI override win over the opt-out", () => {
 		expect(buildNonInteractiveEnv({ CI: "0" }, { PI_BASH_NO_CI: "1" }, "linux").CI).toBe("0");
 	});
+
+	it("disables git sequence editors and Git Credential Manager dialogs", () => {
+		expect(NON_INTERACTIVE_ENV.GIT_SEQUENCE_EDITOR).toBe("true");
+		expect(NON_INTERACTIVE_ENV.GCM_INTERACTIVE).toBe("never");
+	});
 });
 
 it("filters expanded dotenv values while preserving matching and empty launcher values", async () => {
