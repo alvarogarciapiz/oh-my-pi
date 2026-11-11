@@ -139,7 +139,10 @@ export class SessionHandoff {
 			// Both can diverge from this.#host.sessionId() (tan/subagent/shared sessions), so
 			// mirror exactly what the live turn populated the cache under.
 			const handoffPromptCacheKey = this.#host.agent.promptCacheKey ?? this.#host.agent.sessionId;
-			const handoffPromptText = renderHandoffPrompt(this.#host.obfuscateTextForProvider(customInstructions));
+			const handoffPromptText = renderHandoffPrompt(this.#host.obfuscateTextForProvider(customInstructions), {
+				promptOverride: this.#host.obfuscateTextForProvider(options?.promptOverride),
+				extraContext: options?.extraContext?.map(context => this.#host.obfuscateTextForProvider(context) ?? ""),
+			});
 			const handoffSnapshot: AgentMessage[] = [
 				...this.#host.agent.state.messages,
 				{
@@ -156,7 +159,9 @@ export class SessionHandoff {
 			// Explicit /handoff keeps its base-prompt semantics.
 			const handoffContext = await this.#host.agent.buildSideRequestContext(
 				handoffLlmMessages,
-				options?.autoTriggered ? this.#host.agent.state.systemPrompt : this.#host.baseSystemPrompt(),
+				options?.autoTriggered || options?.preserveLivePrompt
+					? this.#host.agent.state.systemPrompt
+					: this.#host.baseSystemPrompt(),
 			);
 			const handoffStreamOptions = this.#host.prepareSimpleStreamOptions(
 				{

@@ -1258,7 +1258,7 @@ export class SessionMaintenance {
 					}
 					continue;
 				}
-				if (method === "soft") {
+				if (method === "handoff" || method === "soft") {
 					selectedMethod = method;
 					selectedMethodIndex = index;
 					break;
@@ -1476,6 +1476,25 @@ export class SessionMaintenance {
 				firstKeptEntryId = compactionPrep.firstKeptEntryId;
 				tokensBefore = compactionPrep.tokensBefore;
 				details = compactionPrep.details;
+				preserveData = compactionPrep.preserveData;
+			} else if (selectedMethod === "handoff") {
+				const generated = await this.#host
+					.generateHandoffDocument(options?.internalGuidance ?? customInstructions ?? "", {
+						preserveLivePrompt: true,
+						promptOverride: compactionPrep.hookPrompt,
+						extraContext: compactionPrep.hookContext,
+						signal: compactionAbortController.signal,
+					})
+					.catch(error => {
+						if (compactionAbortController.signal.aborted) {
+							throw new CompactionCancelledError(undefined, { cause: compactionAbortController.signal.reason });
+						}
+						throw error;
+					});
+				if (!generated) throw new Error("Handoff generation produced no content");
+				({ summary, details } = handoffSummaryFromDocument(generated.document, preparation));
+				firstKeptEntryId = preparation.firstKeptEntryId;
+				tokensBefore = preparation.tokensBefore;
 				preserveData = compactionPrep.preserveData;
 			} else if (snapcompactResult) {
 				summary = snapcompactResult.summary;

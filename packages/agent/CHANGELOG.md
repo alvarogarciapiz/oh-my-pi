@@ -4,6 +4,7 @@
 
 ### Added
 
+- Handoff prompt rendering accepts compaction-hook instructions and additional context without reserializing the conversation
 - Added `estimateAdaptiveReserveTokens()` and `CompactionSettings.adaptiveReserveTokens` for usage-based compaction reserves, `resolveToolConcurrencyMode()`, and the optional `AgentTool.outputSchema`
 - Added the `pinnedToolDefinitions` agent option and `getSentToolDefinitions()`, so a child agent can declare its parent's exact tool definitions and reuse the parent's prompt cache
 
