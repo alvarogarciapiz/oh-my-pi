@@ -82,6 +82,7 @@
 - The `edit` tool in `replace` mode and the `grep`, `find` and `bash` tools now carry worked call examples in their descriptions
 - Subagent results up to 11,500 characters now reach the parent whole instead of as a 5,000-character preview pointing at `agent://<id>`; an envelope whose verification, error or merge summary would exceed async delivery still falls back to the preview (upstream a88548f310, 2e0a3b65ca, ec1eae8f3d)
 - `wait` no longer ends on an `agent://all` broadcast (it reaches the agent after the wait returns, without interrupting it), and jobs settling within 1.5 s of the first come back in one result (upstream adcb8800b6, without the reply-wait cap change)
+- The `bash` tool now runs on pi's own bash 5.3 engine (replacing brush) with the v18.18.9 native runtime: per-run stdio, EXIT traps, `env -i`, `timeout`/`nohup`/`git` as shell tools, and native filesystem/search performance work; the old filesystem scan cache invalidation hook is gone, and SIXEL encodes take the terminal background colour (upstream 44711a78c1 and the v18.18.9 `crates/` + `packages/natives` sync, N-45/N-46/N-47)
 ### Fixed
 
 - Fixed `edit` moves dropping executable permissions in hashline, patch, and apply_patch modes (upstream #16042, N-37)

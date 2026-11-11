@@ -49,7 +49,6 @@ import { assertEditableFile } from "./auto-generated-guard";
 import { isReadTruncationNotice } from "@oh-my-pi/pi-tui/tools/hashline-format";
 import { hasColumnTruncationClause, isColumnTruncationNotice } from "@oh-my-pi/pi-tui/tools/output-meta";
 import { recoverConflictUriPrefix } from "./conflict-detect";
-import { invalidateFsScanAfterWrite } from "./fs-cache-invalidation";
 
 import { outputMeta } from "./output-meta";
 import { formatPathRelativeToCwd, probeLiteralPathExists, specialFileKind } from "./path-utils";
@@ -717,7 +716,6 @@ export class WriteTool implements AgentTool<typeof writeSchema, WriteToolDetails
 			throw new ToolError(error instanceof Error ? error.message : String(error));
 		}
 
-		invalidateFsScanAfterWrite(resolvedArchivePath.absolutePath);
 		const outputPath = `${formatPathRelativeToCwd(resolvedArchivePath.absolutePath, this.session.cwd)}:${
 			resolvedArchivePath.archiveSubPath
 		}`;
@@ -844,7 +842,6 @@ export class WriteTool implements AgentTool<typeof writeSchema, WriteToolDetails
 				}
 			}
 
-			invalidateFsScanAfterWrite(resolvedSqlitePath.absolutePath);
 			return toolResult<WriteToolDetails>({ resolvedPath: resolvedSqlitePath.absolutePath })
 				.text(resultText)
 				.sourcePath(resolvedSqlitePath.absolutePath)
@@ -1090,7 +1087,6 @@ export class WriteTool implements AgentTool<typeof writeSchema, WriteToolDetails
 			const diagnostics = await writethrough(absolutePath, writeContent, signal, undefined, batchRequest, dst =>
 				deferred?.begin(dst),
 			);
-			invalidateFsScanAfterWrite(absolutePath);
 			if (!deferred || batchRequest?.flush === false) {
 				this.session.bumpFileMutationVersion?.(absolutePath);
 			}

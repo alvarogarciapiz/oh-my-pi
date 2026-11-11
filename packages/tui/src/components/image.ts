@@ -4,6 +4,7 @@ import {
 	encodeSixelNow,
 	getCellDimensions,
 	getImageDimensions,
+	getTerminalBackgroundColor,
 	type ImageDimensions,
 	ImageProtocol,
 	imageFallback,
@@ -710,7 +711,7 @@ export class Image implements Component {
 		if (sameSize && current.sequence !== undefined) return current.sequence;
 		if (scrollbackRenderDepth > 0) {
 			// Replacing the entry makes a still-pending async encode settle as stale.
-			const sequence = encodeSixelNow(this.#base64Data, widthPx, heightPx);
+			const sequence = encodeSixelNow(this.#base64Data, widthPx, heightPx, getTerminalBackgroundColor());
 			this.#sixel = { widthPx, heightPx, sequence };
 			return sequence;
 		}
@@ -724,9 +725,12 @@ export class Image implements Component {
 			if (this.#options.requestRender) this.#options.requestRender();
 			else this.#budget?.requestRender();
 		};
-		encodeSixelAsync(new Uint8Array(Buffer.from(this.#base64Data, "base64")), widthPx, heightPx).then(settle, () =>
-			settle(null),
-		);
+		encodeSixelAsync(
+			new Uint8Array(Buffer.from(this.#base64Data, "base64")),
+			widthPx,
+			heightPx,
+			getTerminalBackgroundColor(),
+		).then(settle, () => settle(null));
 		return undefined;
 	}
 

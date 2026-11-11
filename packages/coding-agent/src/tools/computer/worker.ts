@@ -6,6 +6,7 @@ import type {
 	Application,
 	ApplicationQuery,
 	ApplicationOpenOptions,
+	OpenedApplication,
 	DesktopMenuItem as MenuItem,
 	DesktopObservation as NativeObservation,
 	DesktopControlState,
@@ -17,6 +18,8 @@ import type {
 	DesktopCapabilities,
 	DesktopCapture,
 	DesktopDisplay,
+	DesktopDragResult,
+	DesktopFocusReturn,
 	DesktopPoint,
 	DesktopScreenState,
 	DesktopSessionOptions,
@@ -48,6 +51,9 @@ import {
 } from "./protocol";
 import { describeWindowMiss } from "./window-miss";
 
+/** A native input call; resolves to its takeover focus report when it took over. */
+type InputCall = Promise<DesktopFocusReturn | null | void>;
+
 /** Native desktop operations consumed by the script runtime. */
 export interface NativeDesktopSession {
 	readonly capabilities: DesktopCapabilities;
@@ -64,7 +70,7 @@ export interface NativeDesktopSession {
 	cancel(): void;
 	retire(): void;
 	listApplications(options?: ApplicationQuery): Promise<Application[]>;
-	openApplication(id: string, options?: ApplicationOpenOptions): Promise<Application>;
+	openApplication(id: string, options?: ApplicationOpenOptions): Promise<OpenedApplication>;
 	menuItems(target: string, path?: string[]): Promise<MenuItem[]>;
 	menuSelect(target: string, path: string[]): Promise<void>;
 	observe(
@@ -72,18 +78,18 @@ export interface NativeDesktopSession {
 		caps?: { maxWidth?: number; maxHeight?: number },
 		options?: AxOptions,
 	): Promise<NativeObservation>;
-	holdKeys(target: string, keys: string[], options: NativeHoldOptions): Promise<void>;
-	holdMouse(target: string, x: number, y: number, options: NativeHoldOptions): Promise<void>;
+	holdKeys(target: string, keys: string[], options: NativeHoldOptions): InputCall;
+	holdMouse(target: string, x: number, y: number, options: NativeHoldOptions): InputCall;
 	acquireControl(): Promise<DesktopControlState>;
 	releaseControl(): void;
 	controlState(): DesktopControlState;
 	bringToCurrentSpace(windowId: string): Promise<void>;
-	click(target: string, x: number, y: number, opts?: PointerOptions | null): Promise<void>;
-	moveMouse(target: string, x: number, y: number, opts?: PointerOptions | null): Promise<void>;
-	drag(target: string, points: DesktopPoint[], opts?: PointerOptions | null): Promise<void>;
-	scroll(target: string, x: number, y: number, dx: number, dy: number, opts?: PointerOptions | null): Promise<void>;
-	typeText(target: string, text: string, opts?: PointerOptions | null): Promise<void>;
-	keyChord(target: string, keys: string[], opts?: PointerOptions | null): Promise<void>;
+	click(target: string, x: number, y: number, opts?: PointerOptions | null): InputCall;
+	moveMouse(target: string, x: number, y: number, opts?: PointerOptions | null): InputCall;
+	drag(target: string, points: DesktopPoint[], opts?: PointerOptions | null): Promise<DesktopDragResult | null | void>;
+	scroll(target: string, x: number, y: number, dx: number, dy: number, opts?: PointerOptions | null): InputCall;
+	typeText(target: string, text: string, opts?: PointerOptions | null): InputCall;
+	keyChord(target: string, keys: string[], opts?: PointerOptions | null): InputCall;
 	raiseWindow(windowId: string): Promise<void>;
 	axSnapshot(target: string, opts?: AxSnapshotOptions | null): Promise<{ text: string }>;
 	axQuery(target: string, query: AxQuery): Promise<AxNode[]>;
@@ -96,7 +102,7 @@ export interface NativeDesktopSession {
 	axPerform(ref: string, action: string): Promise<void>;
 	axSetValue(ref: string, value: string): Promise<void>;
 	axFocus(ref: string): Promise<void>;
-	axClick(ref: string, opts?: PointerOptions | null): Promise<void>;
+	axClick(ref: string, opts?: PointerOptions | null): InputCall;
 	close(): Promise<void>;
 }
 
