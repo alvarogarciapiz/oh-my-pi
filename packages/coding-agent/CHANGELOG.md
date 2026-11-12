@@ -85,6 +85,7 @@
 - The `bash` tool now runs on pi's own bash 5.3 engine (replacing brush) with the v18.18.9 native runtime: per-run stdio, EXIT traps, `env -i`, `timeout`/`nohup`/`git` as shell tools, and native filesystem/search performance work; the old filesystem scan cache invalidation hook is gone, and SIXEL encodes take the terminal background colour (upstream 44711a78c1 and the v18.18.9 `crates/` + `packages/natives` sync, N-45/N-46/N-47)
 ### Fixed
 
+- Fixed `grep` on an explicitly named file larger than 4MB claiming only its first 4MB was searched while native grep streamed the whole file; the note now appears only for multiline patterns, which still read the leading 4MB (upstream d52fd79e4b)
 - Fixed `read` on a directory hiding `node_modules`, `.git`, build outputs and caches; explicit directory listings now show every child, while the startup workspace tree still prunes them (upstream #87/dcb4d4a5c4, N-40)
 - Fixed hashline edits anchored on a line that `read` or `grep` showed cut at the column cap dropping that line's unseen tail; only fully displayed rows count as seen, and such an edit asks for a `:raw` read of the line first (upstream #15649/818cf7fb77, N-37)
 - Fixed `edit` moves dropping executable permissions in hashline, patch, and apply_patch modes (upstream #16042, N-37)
