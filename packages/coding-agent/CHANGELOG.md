@@ -96,6 +96,8 @@
 - The `bash` tool now runs on pi's own bash 5.3 engine (replacing brush) with the v18.18.9 native runtime: per-run stdio, EXIT traps, `env -i`, `timeout`/`nohup`/`git` as shell tools, and native filesystem/search performance work; the old filesystem scan cache invalidation hook is gone, and SIXEL encodes take the terminal background colour (upstream 44711a78c1 and the v18.18.9 `crates/` + `packages/natives` sync, N-45/N-46/N-47)
 ### Fixed
 
+- Fixed shell platform metadata following the host OS instead of the configured engine platform ([#4](https://github.com/javimp2003/oh-my-pi/pull/4) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
+- Fixed Python eval tool definitions failing on Python 3.9 when inferring parameter schemas ([#4](https://github.com/javimp2003/oh-my-pi/pull/4) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
 - Fixed background (speculative) compaction sharing the live turn's provider session; it keeps its own session while still reading the live prompt cache ([#3](https://github.com/javimp2003/oh-my-pi/pull/3) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
 - Fixed resumed text forks reporting an old result when their next model request is blocked ([#4](https://github.com/javimp2003/oh-my-pi/pull/4) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
 - Fixed concurrent review limits and stale verdicts across request, branch and verification changes; unchanged reviews now reuse their recorded findings ([#4](https://github.com/javimp2003/oh-my-pi/pull/4) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))

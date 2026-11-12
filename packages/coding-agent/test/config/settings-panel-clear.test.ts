@@ -133,3 +133,34 @@ it("does not reveal a credential in the canonical parser's error or persist an i
 	await settings.flush();
 	expect(YAML.parse(await Bun.file(configPath).text())).toEqual({ temperature: 0.4 });
 });
+
+it("masks a previously config-only token in search and while editing, then saves the actual replacement", async () => {
+	const configPath = path.join(agentDir, "config.yml");
+	await Bun.write(configPath, YAML.stringify({ auth: { broker: { token: "stored-credential-canary" } } }));
+	await Settings.init({ cwd: projectDir, agentDir });
+	const selector = new SettingsSelectorComponent(
+		{
+			availableThinkingLevels: [],
+			thinkingLevel: undefined,
+			availableThemes: ["dark"],
+			providers: [],
+			settings: createSettingsHost(),
+			plugins: createPluginSettingsHost(projectDir),
+		},
+		{ onChange: () => {}, onCancel: () => {} },
+	);
+	for (const character of "auth.broker.token") selector.handleInput(character);
+	const search = Bun.stripANSI(selector.render(100).join("\n"));
+	expect(search).toContain("auth.broker.token");
+	expect(search).not.toContain("stored-credential-canary");
+	selector.handleInput("\n");
+	expect(Bun.stripANSI(selector.render(100).join("\n"))).not.toContain("stored-credential-canary");
+	selector.handleInput("\x15");
+	for (const character of "replacement-credential-canary") selector.handleInput(character);
+	expect(Bun.stripANSI(selector.render(100).join("\n"))).not.toContain("replacement-credential-canary");
+	selector.handleInput("\n");
+	await settings.flush();
+	expect(YAML.parse(await Bun.file(configPath).text())).toEqual({
+		auth: { broker: { token: "replacement-credential-canary" } },
+	});
+});
