@@ -11,7 +11,8 @@ export type SettingTab =
 	| "shell"
 	| "tools"
 	| "tasks"
-	| "providers";
+	| "providers"
+	| "advanced";
 
 /** Tab display metadata - icon is resolved via theme.symbol() */
 export type TabMetadata = { label: string; icon: Extract<SymbolKey, `tab.${string}`> };
@@ -28,6 +29,7 @@ export const SETTING_TABS: SettingTab[] = [
 	"tools",
 	"tasks",
 	"providers",
+	"advanced",
 ];
 
 /** Tab display metadata - icon is a symbol key from theme.ts (tab.*) */
@@ -42,6 +44,7 @@ export const TAB_METADATA: Record<SettingTab, TabMetadata> = {
 	tools: { label: "Tools", icon: "tab.tools" },
 	tasks: { label: "Tasks", icon: "tab.tasks" },
 	providers: { label: "Providers", icon: "tab.providers" },
+	advanced: { label: "Advanced", icon: "tab.tools" },
 };
 
 /** One-sentence lead per tab, under the page title of the native settings page. */
@@ -56,6 +59,7 @@ export const TAB_LEADS: Record<SettingTab, string> = {
 	tools: "Which tools the model has, their limits and the external integrations.",
 	tasks: "Modes, subagents, isolation and custom commands.",
 	providers: "Services, provider protocols, timeouts and privacy.",
+	advanced: "All remaining configuration keys, using the same validation as omp config.",
 };
 
 /**
@@ -97,8 +101,9 @@ export const TAB_GROUPS: Record<SettingTab, readonly string[]> = {
 		"Extensions",
 		"Developer",
 	],
-	tasks: ["Modes", "Subagents", "Isolation", "Commands & Skills"],
+	tasks: ["Modes", "Subagents", "Isolation", "Commands & Skills", "Commits"],
 	providers: ["Services", "Fireworks", "Tiny Model", "Protocol", "Timeouts", "Privacy"],
+	advanced: [],
 };
 
 /** Submenu choice metadata. */
@@ -137,6 +142,7 @@ export interface SettingsDisplayEntry {
 	path: string;
 	type: string;
 	defaultValue: unknown;
+	description?: string;
 	ui?: AnyUiMetadata;
 	enumValues?: readonly string[];
 	credential?: boolean;
@@ -152,6 +158,8 @@ export interface SettingsHost {
 	 * variable, that configures the setting still applies; otherwise the default does.
 	 */
 	unset(path: string): void;
+	/** Application-owned parsing and normalization, when supplied by the host. */
+	parse?(path: string, value: string): unknown;
 	normalizeProviderLimits(value: unknown): Record<string, number>;
 	validateProviderLimits(value: unknown): Record<string, number>;
 }
@@ -227,8 +235,13 @@ function resolveOptions(ui: AnyUiMetadata): OptionList | "runtime" | undefined {
 }
 
 function entryToSettingDef(entry: SettingsDisplayEntry): SettingDef | null {
-	const { path, ui } = entry;
-	if (!ui) return null;
+	const { path } = entry;
+	const ui: AnyUiMetadata = entry.ui ?? {
+		tab: "advanced",
+		group: path.includes(".") ? path.slice(0, path.indexOf(".")) : "General",
+		label: path,
+		description: entry.description ?? path,
+	};
 
 	const schemaType = entry.type;
 	const condition = entry.condition;
@@ -260,8 +273,7 @@ function entryToSettingDef(entry: SettingsDisplayEntry): SettingDef | null {
 	}
 
 	if (schemaType === "number") {
-		// Numbers without options are intentionally hidden from the UI.
-		if (!options || options === "runtime") return null;
+		if (!options || options === "runtime") return { ...base, type: "text", secret: entry.credential === true };
 		return { ...base, type: "submenu", options };
 	}
 
@@ -280,16 +292,15 @@ function entryToSettingDef(entry: SettingsDisplayEntry): SettingDef | null {
 	}
 
 	if (schemaType === "array") {
-		if (ui.editor === "json") return { ...base, type: "text", secret: entry.credential === true };
-		if (!options) return null;
-		if (options === "runtime") return null;
+		if (ui.editor === "json" || !options || options === "runtime")
+			return { ...base, type: "text", secret: entry.credential === true };
 		return { ...base, type: "multiselect", options, ordered: ui.ordered === true };
 	}
 
 	if (schemaType === "record") {
 		return path === "providers.maxInFlightRequests"
 			? { ...base, type: "providerLimits" }
-			: { ...base, type: "text", secret: false };
+			: { ...base, type: "text", secret: entry.credential === true };
 	}
 
 	return null;
@@ -320,7 +331,11 @@ export function getSettingsForTab(entries: readonly SettingsDisplayEntry[], tab:
 		const index = order.indexOf(def.group);
 		return index >= 0 ? index : order.length;
 	};
-	return defs.sort((a, b) => rank(a) - rank(b));
+	return defs.sort((a, b) =>
+		tab === "advanced"
+			? (a.group ?? "").localeCompare(b.group ?? "") || a.path.localeCompare(b.path)
+			: rank(a) - rank(b),
+	);
 }
 
 /** Find the display definition for a host setting path. */

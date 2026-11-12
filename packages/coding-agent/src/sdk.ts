@@ -1,3 +1,5 @@
+import { applyExecutionProfile } from "./session/execution-profile";
+import type { ExecutionBudget } from "./session/execution-budget";
 import * as path from "node:path";
 import {
 	Agent,
@@ -545,6 +547,8 @@ function applyMCPEnvironment(result: { exaApiKeys: string[] }): void {
 
 // Types
 export interface CreateAgentSessionOptions {
+	executionBudget?: ExecutionBudget;
+	subagentCompletion?: "text" | "yield";
 	/** Working directory for project-local discovery. Default: getProjectDir() */
 	cwd?: string;
 	/** Additional workspace directories beyond cwd (multi-root), absolute or cwd-relative. */
@@ -675,6 +679,7 @@ export interface CreateAgentSessionOptions {
 	providerPromptCacheKeySource?: "explicit" | "fork";
 	/** Parent wire tool definitions a forked child declares in place of its own renders (prompt-cache reuse). */
 	pinnedToolDefinitions?: readonly WireTool[];
+	freezeToolDefinitions?: boolean;
 	/** Absolute wall-clock deadline in Unix epoch milliseconds. */
 	deadline?: number;
 
@@ -1752,7 +1757,7 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 	registerSshCleanup();
 	registerEvalCleanup();
 
-	const settings = await (options.settings ??
+	let settings = await (options.settings ??
 		options.settingsManager ??
 		logger.time("settings", Settings.init, { cwd, agentDir }));
 	// Discovery provider toggles and process-wide setting effects (theme, request limits, …)
@@ -1912,6 +1917,7 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 		logger.time("sessionManager", () =>
 			SessionManager.create(cwd, SessionManager.getDefaultSessionDir(cwd, agentDir)),
 		);
+	settings = await applyExecutionProfile(settings, sessionManager, cwd);
 	// Freeze the workspace snapshot within a conversation, including prompt
 	// rebuilds after compaction; /new and switch_session observe the current state.
 	let snapshotSessionId = sessionManager.getSessionId();
@@ -2419,7 +2425,12 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 					systemPrompt: [...forkAgent.state.systemPrompt],
 					model: activeModel,
 					thinkingLevel: forkSession.configuredThinkingLevel(),
-					toolDefinitions: forkAgent.getSentToolDefinitions(),
+					toolDefinitions:
+						activeModel.compat &&
+						"supportsMidConversationToolChanges" in activeModel.compat &&
+						activeModel.compat.supportsMidConversationToolChanges === true
+							? forkAgent.getSentToolDefinitions()
+							: forkAgent.getLastWireToolDefinitions(),
 					// Providers route on `promptCacheKey ?? sessionId`; mirror what the parent cached under.
 					promptCacheKey: forkAgent.promptCacheKey ?? forkSession.sessionId,
 				};
@@ -2452,6 +2463,8 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 			},
 			getFileMutationVersion: path => fileMutationVersions.get(path) ?? 0,
 			getTodoPhases: () => session.getTodoPhases(),
+			getVerificationContracts: () => session?.verificationContracts,
+			getExecutionBudget: () => session?.executionBudget.current,
 			setTodoPhases: phases => session.setTodoPhases(phases),
 			persistTodoPhases: phases => sessionManager.appendCustomEntry(USER_TODO_EDIT_CUSTOM_TYPE, { phases }),
 			getWorkPoolYieldItems: () => session?.getWorkPoolYieldItems() ?? [],
@@ -4453,6 +4466,7 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 			transformContext,
 			transformProviderContext,
 			pinnedToolDefinitions: options.pinnedToolDefinitions,
+			freezeToolDefinitions: options.freezeToolDefinitions,
 			steeringMode: cfgSteeringMode.get(settings),
 			followUpMode: cfgFollowUpMode.get(settings),
 			interruptMode: cfgInterruptMode.get(settings),
@@ -4647,6 +4661,14 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 		// block createAgentSession for tens of seconds while the whole file is
 		// streamed and parsed on the main thread.
 		session = new AgentSession({
+			executionBudget: options.executionBudget,
+			subagentCompletion:
+				options.subagentCompletion ??
+				(sessionManager
+					.getBranch()
+					.some(entry => entry.type === "custom" && entry.customType === "task-text-completion")
+					? "text"
+					: "yield"),
 			codeModeState,
 			cacheWarmer,
 			advisorWatchdogPrompt,

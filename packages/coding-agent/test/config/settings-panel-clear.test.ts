@@ -68,3 +68,68 @@ it("clearing a settings-panel text field removes the key from config.yml so its 
 	await settings.flush();
 	expect(YAML.parse(await Bun.file(configPath).text())).toEqual({ temperature: 0.4 });
 });
+
+it("edits previously config-only arrays and numbers through the same parser as omp config, then removes the override on reset", async () => {
+	const configPath = path.join(agentDir, "config.yml");
+	await Bun.write(configPath, YAML.stringify({ temperature: 0.4 }));
+	await Settings.init({ cwd: projectDir, agentDir });
+	const selector = new SettingsSelectorComponent(
+		{
+			availableThinkingLevels: [],
+			thinkingLevel: undefined,
+			availableThemes: ["dark"],
+			providers: [],
+			settings: createSettingsHost(),
+			plugins: createPluginSettingsHost(projectDir),
+		},
+		{ onChange: () => {}, onCancel: () => {} },
+	);
+	for (const character of "retry.baseDelayMs") selector.handleInput(character);
+	selector.handleInput("\n");
+	selector.handleInput("\x15");
+	for (const character of "1250") selector.handleInput(character);
+	selector.handleInput("\n");
+	await settings.flush();
+	expect(YAML.parse(await Bun.file(configPath).text())).toEqual({ temperature: 0.4, retry: { baseDelayMs: 1250 } });
+	selector.handleInput("\x12");
+	await settings.flush();
+	expect(YAML.parse(await Bun.file(configPath).text())).toEqual({ temperature: 0.4 });
+	selector.handleInput("\x1b");
+	for (const character of "enabledModels") selector.handleInput(character);
+	selector.handleInput("\n");
+	selector.handleInput("\x15");
+	for (const character of '["litellm/team-model"]') selector.handleInput(character);
+	selector.handleInput("\n");
+	await settings.flush();
+	expect(YAML.parse(await Bun.file(configPath).text())).toEqual({
+		temperature: 0.4,
+		enabledModels: ["litellm/team-model"],
+	});
+});
+
+it("does not reveal a credential in the canonical parser's error or persist an invalid credential record", async () => {
+	const configPath = path.join(agentDir, "config.yml");
+	await Bun.write(configPath, YAML.stringify({ temperature: 0.4 }));
+	await Settings.init({ cwd: projectDir, agentDir });
+	const selector = new SettingsSelectorComponent(
+		{
+			availableThinkingLevels: [],
+			thinkingLevel: undefined,
+			availableThemes: ["dark"],
+			providers: [],
+			settings: createSettingsHost(),
+			plugins: createPluginSettingsHost(projectDir),
+		},
+		{ onChange: () => {}, onCancel: () => {} },
+	);
+	for (const character of "images.urls.credentials") selector.handleInput(character);
+	selector.handleInput("\n");
+	selector.handleInput("\x15");
+	for (const character of '{"token":"credential-error-canary"') selector.handleInput(character);
+	selector.handleInput("\n");
+	const rendered = Bun.stripANSI(selector.render(100).join("\n"));
+	expect(rendered).toContain("Could not save credential");
+	expect(rendered).not.toContain("credential-error-canary");
+	await settings.flush();
+	expect(YAML.parse(await Bun.file(configPath).text())).toEqual({ temperature: 0.4 });
+});

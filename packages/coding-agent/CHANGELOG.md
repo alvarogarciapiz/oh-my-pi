@@ -6,6 +6,16 @@
 
 - Coding conversations now start with a brief repository map in the workspace snapshot; it stays the same through compaction and is taken again for a new conversation ([#3](https://github.com/javimp2003/oh-my-pi/pull/3) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
 - Added `imageCountBudget` to custom models and `modelOverrides` in models.yml: a positive integer that replaces the provider's default per-request image budget, so a gateway with a higher limit keeps every image (upstream #15969)
+- Added acceptance contracts with revision-bound check evidence and optional independent executable review.
+- Added shared parent/subagent execution budgets with a verification reserve.
+- Added measured execution profiles that keep editor and tool-document settings stable across resume.
+
+- Added an 8 KB preview budget for new tool results, with artifact recovery for larger outputs ([#3](https://github.com/javimp2003/oh-my-pi/pull/3) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
+- Added incremental compaction with sealed summary blocks and configurable consolidation budgets ([#3](https://github.com/javimp2003/oh-my-pi/pull/3) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
+- Choose Conventional Commits or Unicaja messages in Settings, with a Jira task inferred from the branch or supplied explicitly
+- Added a terminal workbench (`/home`, `F2`) with searchable navigation for chat, models, context, agents, tools and settings
+- All configuration keys are now editable in `/settings`, including Advanced entries, custom numeric values and JSON arrays, with keyboard reset
+- Coding conversations now start with a brief repository map that remains stable through compaction and refreshes for a new conversation ([#3](https://github.com/javimp2003/oh-my-pi/pull/3) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
 - Added `archive.find(query)` and `archive.open(id, {line})` in eval: verbatim full-text search over past sessions (assistant text, tool calls and results, summaries), one ranked row per session with a snippet and recap, indexed incrementally in a background worker (`archive.contentSearch`, on by default; `archive.indexThinking` opt-in). Without eval the same search is the `session_search` tool
 - Added the shared `team_task` board (`task.team.enabled`, on by default when subagents are possible): agents in one tree create, claim and complete tasks with dependencies, compare-and-set revisions and write-scope overlap warnings; state lives in the root session
 - Added automatic nested instructions (`contextFiles.nestedAutoInject`, on by default): the first `read`/`write`/`edit` inside a subdirectory injects its `AGENTS.md`/`CLAUDE.md` content (and later updates or removals) without an extra read; capped by `contextFiles.nestedMaxBytes`
@@ -88,6 +98,13 @@
 ### Fixed
 
 - Fixed background (speculative) compaction sharing the live turn's provider session; it keeps its own session while still reading the live prompt cache ([#3](https://github.com/javimp2003/oh-my-pi/pull/3) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
+- Fixed resumed text forks reporting an old result when their next model request is blocked.
+- Fixed concurrent review limits and stale verdicts across request, branch and verification changes; unchanged reviews now reuse their recorded findings.
+- Fixed late model responses charging the next request's budget and enabled verification reserves for time-only budgets.
+
+- Fixed full-history task forks on OpenAI-compatible backends to preserve ordered tool definitions without adding a yield tool.
+
+- Background compaction now keeps its provider session separate from the live turn while sharing its prompt-cache routing key ([#3](https://github.com/javimp2003/oh-my-pi/pull/3) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
 - Automatic handoff compaction keeps the live system prompt, including extension overrides, so generating the summary can reuse the current prompt cache ([#3](https://github.com/javimp2003/oh-my-pi/pull/3) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
 - Fixed `grep` on an explicitly named file larger than 4MB claiming only its first 4MB was searched while native grep streamed the whole file; the note now appears only for multiline patterns, which still read the leading 4MB (upstream d52fd79e4b)
 - Fixed the eval state reminder kept after compaction saying no eval kernel is running while a Python kernel is alive; Python kernels now report their generation, alive/dead status, interpreter and loaded scripts like JavaScript kernels (upstream #16032/1a8ba3f87d)

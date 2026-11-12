@@ -701,6 +701,15 @@ export class InputController {
 		this.ctx.editor.clearCustomKeyHandlers();
 		// Wire up extension shortcuts
 		this.registerExtensionShortcuts();
+		for (const key of this.ctx.keybindings.getKeys("app.workbench.open")) {
+			this.ctx.editor.setCustomKeyHandler(key, () => {
+				void executeBuiltinSlashCommand("/home", { ctx: this.ctx, draftDetached: true }).catch(error => {
+					this.ctx.showError(
+						`Could not open workbench: ${error instanceof Error ? error.message : String(error)}`,
+					);
+				});
+			});
+		}
 		const planModeKeys = this.ctx.keybindings.getKeys("app.plan.toggle");
 		for (const key of planModeKeys) {
 			this.ctx.editor.setCustomKeyHandler(key, () => void this.ctx.handlePlanModeCommand());
