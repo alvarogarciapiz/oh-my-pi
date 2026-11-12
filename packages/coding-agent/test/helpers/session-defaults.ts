@@ -13,6 +13,7 @@ export function createSessionDefaults() {
 		abort: async () => {},
 		dispose: async () => {},
 		setIrcWakeTurnObserver: () => {},
+		holdIrcWakes: () => () => {},
 		isAdvisorActive: () => false,
 		subscribeRunState: () => () => {},
 		addDisposer: () => {},

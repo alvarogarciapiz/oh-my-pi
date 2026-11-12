@@ -8,13 +8,20 @@ import { ProcProtocolHandler } from "../../src/internal-urls/proc-protocol";
 import { parseInternalUrl } from "../../src/internal-urls/parse";
 import { AgentRegistry } from "../../src/registry/agent-registry";
 import { startDaemonBrokerFromEnvironment } from "../../src/launch/broker";
-import { createDaemonBrokerClient } from "../../src/launch/client";
+import { createDaemonBrokerClient, type DaemonBrokerClient } from "../../src/launch/client";
 import * as daemonClient from "../../src/launch/client";
-import { DAEMON_IDLE_GRACE_ENV, DAEMON_PROJECT_DIR_ENV, DAEMON_RUNTIME_DIR_ENV } from "../../src/launch/protocol";
+import {
+	DAEMON_IDLE_GRACE_ENV,
+	DAEMON_PROJECT_DIR_ENV,
+	DAEMON_RUNTIME_DIR_ENV,
+	type DaemonOperation,
+	type DaemonRpcResult,
+} from "../../src/launch/protocol";
 import * as bashExecutor from "../../src/exec/bash-executor";
 import { BashTool } from "../../src/tools/bash";
 import { WriteTool } from "../../src/tools/write";
 import type { ToolSession } from "../../src/tools";
+import type { DaemonSnapshot } from "@oh-my-pi/pi-tui/tools/daemon";
 
 function startBroker(projectDir: string, runtimeDir: string): Promise<void> {
 	const previous = [
@@ -70,6 +77,34 @@ function toolSession(cwd: string, manager?: AsyncJobManager, options: { launch?:
 			shellPath: SERVICE_SHELL,
 		}),
 	} as unknown as ToolSession;
+}
+
+/**
+ * Agent `Quick` finished its first run and was woken: its new turn's job asks for
+ * the id `Quick`, but the settled first job still holds it, so the turn runs as `Quick-2`.
+ */
+async function wokenAgentSession(
+	options: { launch?: boolean } = {},
+): Promise<{ manager: AsyncJobManager; session: ToolSession }> {
+	const manager = new AsyncJobManager({});
+	const registry = new AgentRegistry();
+	registry.register({ id: "Quick", displayName: "Quick", kind: "sub", parentId: "Main", session: null });
+	const session = toolSession(process.cwd(), manager, { launch: options.launch ?? false });
+	session.agentRegistry = registry;
+	manager.register("task", "Quick", async () => "READY", { id: "Quick", agentId: "Quick", ownerId: "Main" });
+	await manager.getJob("Quick")?.promise;
+	const turn = Promise.withResolvers<string>();
+	const turnJobId = manager.register(
+		"task",
+		"Quick",
+		async ({ signal }) => {
+			signal.addEventListener("abort", () => turn.resolve("cancelled"), { once: true });
+			return turn.promise;
+		},
+		{ id: "Quick", agentId: "Quick", ownerId: "Main" },
+	);
+	expect(turnJobId).toBe("Quick-2");
+	return { manager, session };
 }
 
 describe("proc:// background jobs", () => {
@@ -267,6 +302,82 @@ describe("proc:// background jobs", () => {
 			expect(registry.get("Worker")).toBeUndefined();
 		} finally {
 			await manager?.dispose();
+		}
+	});
+
+	it("finds a woken agent by its own id once its first job row is gone", async () => {
+		const { manager, session } = await wokenAgentSession();
+		const protocol = new ProcProtocolHandler();
+		try {
+			manager.evictCompletedJobs({ ownerId: "Main" });
+			const running = await protocol.resolve(parseInternalUrl("proc://Quick"), { session });
+			expect(running.details?.proc?.job).toMatchObject({ id: "Quick-2", status: "running" });
+
+			const killed = await protocol.write(parseInternalUrl("proc://Quick/kill"), "", { session });
+			await manager.getJob("Quick-2")?.promise;
+			expect(killed.details?.proc).toMatchObject({ cancelled: [{ id: "Quick-2", status: "cancelled" }] });
+			expect(manager.getJob("Quick-2")?.status).toBe("cancelled");
+		} finally {
+			await manager.dispose();
+		}
+	});
+
+	it("names the running job of a woken agent when its settled first job is read", async () => {
+		const { manager, session } = await wokenAgentSession();
+		try {
+			const settled = await new ProcProtocolHandler().resolve(parseInternalUrl("proc://Quick"), { session });
+			expect(settled.details?.proc?.job).toMatchObject({ id: "Quick", status: "completed" });
+			expect(settled.content).toContain("running again as job Quick-2");
+		} finally {
+			await manager.dispose();
+		}
+	});
+
+	it("keeps a service named like a woken agent reachable for read and kill", async () => {
+		const now = Date.now();
+		const daemon: DaemonSnapshot = {
+			name: "Quick",
+			id: "quick-service",
+			state: "ready",
+			createdAt: now,
+			startedAt: now,
+			readyAt: now,
+			restartCount: 0,
+			outputBytes: 0,
+			persist: false,
+			detached: false,
+		};
+		const stopped: string[] = [];
+		const client = {
+			projectDir: process.cwd(),
+			onCompletion: () => () => {},
+			close() {},
+			async request(operation: DaemonOperation): Promise<DaemonRpcResult> {
+				if (operation.op === "list") return { op: "list", daemons: [daemon] };
+				if (operation.op === "logs")
+					return { op: "logs", name: "Quick", text: "serving\n", cursor: 8, timedOut: false, state: "ready" };
+				if (operation.op === "stop") {
+					stopped.push(operation.name);
+					return { op: "stop", daemon: { ...daemon, state: "exited", exitedAt: now } };
+				}
+				throw new Error(`Unexpected broker op ${operation.op}`);
+			},
+		} as unknown as DaemonBrokerClient;
+		const spy = vi.spyOn(daemonClient, "daemonClientForProject").mockResolvedValue(client);
+		const { manager, session } = await wokenAgentSession({ launch: true });
+		const protocol = new ProcProtocolHandler();
+		try {
+			manager.evictCompletedJobs({ ownerId: "Main" });
+			const read = await protocol.resolve(parseInternalUrl("proc://Quick"), { session });
+			expect(read.details?.proc).toMatchObject({ daemon: { name: "Quick" } });
+
+			const killed = await protocol.write(parseInternalUrl("proc://Quick/kill"), "", { session });
+			expect(killed.details?.proc).toMatchObject({ action: "stop", daemon: { name: "Quick" } });
+			expect(stopped).toEqual(["Quick"]);
+			expect(manager.getJob("Quick-2")?.status).toBe("running");
+		} finally {
+			spy.mockRestore();
+			await manager.dispose();
 		}
 	});
 

@@ -12,7 +12,14 @@ import type {
 	ToolApprovalDecision,
 } from "@oh-my-pi/pi-agent-core";
 
-import { isEnoent, isRecord, prompt, untilAborted } from "@oh-my-pi/pi-utils";
+import {
+	BINARY_SNIFF_BYTES,
+	isEnoent,
+	isProbablyBinaryHeader,
+	isRecord,
+	prompt,
+	untilAborted,
+} from "@oh-my-pi/pi-utils";
 import {
 	type ArchiveMemberContent,
 	archiveFormatFromPath,
@@ -21,7 +28,7 @@ import {
 	readArchiveEntries,
 	writeArchive,
 } from "@oh-my-pi/pi-utils/ar";
-import { normalizeToLF } from "../edit/normalize";
+import { detectLineEnding, normalizeToLF, restoreLineEndings } from "../edit/normalize";
 import { cfgEditEnforceReadBeforeWrite } from "../edit/settings";
 
 import { InternalUrlRouter, sessionResolveContext, sessionWriteContext } from "../internal-urls";
@@ -40,8 +47,8 @@ import { truncateForPrompt } from "./approval";
 import { assertEditableFile } from "./auto-generated-guard";
 
 import { isReadTruncationNotice } from "@oh-my-pi/pi-tui/tools/hashline-format";
+import { hasColumnTruncationClause, isColumnTruncationNotice } from "@oh-my-pi/pi-tui/tools/output-meta";
 import { recoverConflictUriPrefix } from "./conflict-detect";
-import { invalidateFsScanAfterWrite } from "./fs-cache-invalidation";
 
 import { outputMeta } from "./output-meta";
 import { formatPathRelativeToCwd, probeLiteralPathExists, specialFileKind } from "./path-utils";
@@ -202,6 +209,14 @@ const writeSchema = type({
 export type WriteToolInput = typeof writeSchema.infer;
 
 /**
+ * A `read` notice that its projection is incomplete: a truncation notice, or the column-cap
+ * notice of a page whose long lines are shown cut (`[Some lines truncated to 768 chars. …]`).
+ */
+function isReadProjectionNotice(line: string): boolean {
+	return isReadTruncationNotice(line) || isColumnTruncationNotice(line);
+}
+
+/**
  * Offset of the last non-blank line of LF-only `text` when that line is a `read`
  * truncation notice, else -1. Walks lines backward from the end instead of splitting.
  */
@@ -210,7 +225,7 @@ function readTruncationNoticeStart(text: string): number {
 	while (end > 0) {
 		const start = text.lastIndexOf("\n", end - 1) + 1;
 		const line = text.slice(start, end);
-		if (line.trim().length > 0) return isReadTruncationNotice(line) ? start : -1;
+		if (line.trim().length > 0) return isReadProjectionNotice(line) ? start : -1;
 		end = start - 1;
 	}
 	return -1;
@@ -224,13 +239,12 @@ function lfNormalizedLength(text: string): number {
 }
 
 /**
- * `readTruncationNoticeStart(normalizeToLF(content)) !== -1` without normalizing the
- * payload: only the last non-blank line is inspected, bounded in the raw text by CR or LF
- * (exactly the line normalization would produce).
+ * The last non-blank line of `content` without normalizing the payload, bounded in the raw
+ * text by CR or LF (exactly the line normalization would produce); `undefined` when blank.
  */
-function endsWithReadTruncationNotice(content: string): boolean {
+function lastContentLine(content: string): string | undefined {
 	const contentEnd = content.trimEnd().length;
-	if (contentEnd === 0) return false;
+	if (contentEnd === 0) return undefined;
 	let start = contentEnd;
 	while (start > 0) {
 		const ch = content.charCodeAt(start - 1);
@@ -243,7 +257,13 @@ function endsWithReadTruncationNotice(content: string): boolean {
 		if (ch === 0x0a || ch === 0x0d) break;
 		end++;
 	}
-	return isReadTruncationNotice(content.slice(start, end));
+	return content.slice(start, end);
+}
+
+/** `readTruncationNoticeStart(normalizeToLF(content)) !== -1` without normalizing the payload. */
+function endsWithReadTruncationNotice(content: string): boolean {
+	const line = lastContentLine(content);
+	return line !== undefined && isReadProjectionNotice(line);
 }
 
 async function readCurrentWriteSource(
@@ -304,10 +324,18 @@ function assertNotShorterReadProjection(
 ): void {
 	const rawPayloadLength = readProjectionPayloadLength(rawContent);
 	if (rawPayloadLength === undefined || currentContent === undefined) return;
-	const payloadLength = writeContent === rawContent ? rawPayloadLength : lfNormalizedLength(writeContent);
-	if (payloadLength >= lfNormalizedLength(currentContent)) return;
+	// A column-cap notice proves the page lossy at any length: a cut line ends in `…` in place of
+	// its tail, and a line one column past the cap renders exactly as long as its source. So does
+	// a truncation notice carrying the column clause, whose line-number prefixes pad the payload.
+	const columnCut = hasColumnTruncationClause(lastContentLine(rawContent) ?? "");
+	if (!columnCut) {
+		const payloadLength = writeContent === rawContent ? rawPayloadLength : lfNormalizedLength(writeContent);
+		if (payloadLength >= lfNormalizedLength(currentContent)) return;
+	}
 	throw new ToolError(
-		`Refusing to overwrite '${displayPath}' with an incomplete read projection: the content ends with an omp read truncation notice and covers less than the current source, so it would discard unseen content. Re-read the omitted ranges and write the complete file, or use edit for a partial change.`,
+		columnCut
+			? `Refusing to overwrite '${displayPath}' with an incomplete read projection: the content ends with an omp read column-cap notice, so its cut lines would replace the full ones. Re-read the cut lines in raw mode and write the complete file, or use edit for a partial change.`
+			: `Refusing to overwrite '${displayPath}' with an incomplete read projection: the content ends with an omp read truncation notice and covers less than the current source, so it would discard unseen content. Re-read the omitted ranges and write the complete file, or use edit for a partial change.`,
 	);
 }
 
@@ -377,6 +405,79 @@ async function maybeMarkExecutableForShebang(absolutePath: string, content: stri
 	} catch {
 		return false;
 	}
+}
+
+/** Line-ending and BOM convention of a text file a write is about to replace. */
+interface TextFileConvention {
+	bom: boolean;
+	crlf: boolean;
+}
+
+/** Bytes read per step while looking for a first line break past the binary sniff window. */
+const LINE_BREAK_SCAN_BYTES = 64 * 1024;
+
+/**
+ * Read the convention of the `size`-byte file at `absolutePath`: a leading UTF-8 BOM, and CRLF when
+ * its first line break is one (the rule `edit` applies). The first {@link BINARY_SNIFF_BYTES} decide
+ * whether it is text; a longer first line is scanned to its end, stopping when `signal` aborts.
+ * `undefined` for a binary file, whose bytes say nothing about text line endings.
+ */
+async function readTextFileConvention(
+	absolutePath: string,
+	size: number,
+	signal: AbortSignal | undefined,
+): Promise<TextFileConvention | undefined> {
+	const file = Bun.file(absolutePath);
+	let chunk = await file.slice(0, BINARY_SNIFF_BYTES).bytes();
+	if (isProbablyBinaryHeader(chunk)) return undefined;
+	const bom = chunk[0] === 0xef && chunk[1] === 0xbb && chunk[2] === 0xbf;
+	let offset = 0;
+	let previous: number | undefined;
+	for (;;) {
+		const lf = chunk.indexOf(0x0a);
+		if (lf !== -1) return { bom, crlf: (lf > 0 ? chunk[lf - 1] : previous) === 0x0d };
+		offset += chunk.length;
+		if (chunk.length === 0 || offset >= size) return { bom, crlf: false };
+		signal?.throwIfAborted();
+		previous = chunk[chunk.length - 1];
+		chunk = await file.slice(offset, offset + LINE_BREAK_SCAN_BYTES).bytes();
+	}
+}
+
+/**
+ * Give `content` the CRLF line endings and BOM of the file it replaces, as `edit` keeps them.
+ * Models write LF text, so without this replacing a CRLF file rewrites every line and drops its BOM.
+ * Each is independent: content with a carriage return keeps its line endings, content that starts
+ * with a BOM keeps it, and empty content stays empty. `applied` says which were added.
+ */
+function applyTextFileConvention(
+	content: string,
+	convention: TextFileConvention | undefined,
+): { text: string; applied: TextFileConvention } {
+	const applied = { bom: false, crlf: false };
+	if (!convention) return { text: content, applied };
+	let text = content;
+	if (convention.crlf && text.includes("\n") && !text.includes("\r")) {
+		text = restoreLineEndings(text, "\r\n");
+		applied.crlf = true;
+	}
+	if (convention.bom && text.length > 0 && !text.startsWith("\uFEFF")) {
+		text = `\uFEFF${text}`;
+		applied.bom = true;
+	}
+	return { text, applied };
+}
+
+/**
+ * Name each convention `applied` added that `finalText` (what the LSP formatter left, or the content
+ * as written) still has, so the model knows the file differs from the text it sent. A convention a
+ * formatter removed again is not claimed.
+ */
+function textFileConventionNote(applied: TextFileConvention, finalText: string): string | undefined {
+	const kept: string[] = [];
+	if (applied.crlf && detectLineEnding(finalText) === "\r\n") kept.push("CRLF line endings");
+	if (applied.bom && finalText.startsWith("\uFEFF")) kept.push("UTF-8 BOM");
+	return kept.length === 0 ? undefined : `Note: kept the replaced file's ${kept.join(" and ")}.`;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -615,7 +716,6 @@ export class WriteTool implements AgentTool<typeof writeSchema, WriteToolDetails
 			throw new ToolError(error instanceof Error ? error.message : String(error));
 		}
 
-		invalidateFsScanAfterWrite(resolvedArchivePath.absolutePath);
 		const outputPath = `${formatPathRelativeToCwd(resolvedArchivePath.absolutePath, this.session.cwd)}:${
 			resolvedArchivePath.archiveSubPath
 		}`;
@@ -742,7 +842,6 @@ export class WriteTool implements AgentTool<typeof writeSchema, WriteToolDetails
 				}
 			}
 
-			invalidateFsScanAfterWrite(resolvedSqlitePath.absolutePath);
 			return toolResult<WriteToolDetails>({ resolvedPath: resolvedSqlitePath.absolutePath })
 				.text(resultText)
 				.sourcePath(resolvedSqlitePath.absolutePath)
@@ -940,7 +1039,23 @@ export class WriteTool implements AgentTool<typeof writeSchema, WriteToolDetails
 				cleanContent,
 			);
 
-			emitWriteProgress(onUpdate, cleanBytes, displayPath, absolutePath);
+			// An ACP editor saves with its buffer's own line endings and encoding, so a write routed to
+			// it goes as given. Elsewhere an unreadable file keeps today's behavior; the write reports why.
+			const bridge = this.session.getClientBridge?.();
+			const editorOwnsFile =
+				bridge?.capabilities.writeTextFile === true &&
+				bridge.writeTextFile !== undefined &&
+				(await shouldRouteWriteThroughBridge(this.session, path, absolutePath));
+			const convention =
+				existing?.isFile() && !editorOwnsFile
+					? await readTextFileConvention(absolutePath, existing.size, signal).catch(() => undefined)
+					: undefined;
+			// `untilAborted` has already rejected the call if it was cancelled during the scan; don't write.
+			signal?.throwIfAborted();
+			const { text: writeContent, applied } = applyTextFileConvention(cleanContent, convention);
+			const writeBytes = writeContent === cleanContent ? cleanBytes : Buffer.byteLength(writeContent, "utf8");
+
+			emitWriteProgress(onUpdate, writeBytes, displayPath, absolutePath);
 
 			// Try ACP bridge first for editor-visible filesystem paths. Internal
 			// artifacts such as local:// plans are owned by OMP, not the editor.
@@ -969,10 +1084,9 @@ export class WriteTool implements AgentTool<typeof writeSchema, WriteToolDetails
 			}
 
 			const { writethrough, deferred } = this.#lspWritethrough();
-			const diagnostics = await writethrough(absolutePath, cleanContent, signal, undefined, batchRequest, dst =>
+			const diagnostics = await writethrough(absolutePath, writeContent, signal, undefined, batchRequest, dst =>
 				deferred?.begin(dst),
 			);
-			invalidateFsScanAfterWrite(absolutePath);
 			if (!deferred || batchRequest?.flush === false) {
 				this.session.bumpFileMutationVersion?.(absolutePath);
 			}
@@ -981,11 +1095,17 @@ export class WriteTool implements AgentTool<typeof writeSchema, WriteToolDetails
 			const madeExecutable = await maybeMarkExecutableForShebang(absolutePath, finalContent);
 
 			const header = maybeWriteSnapshotHeader(this.session, absolutePath, finalContent, displayPath);
-			const finalBytes = finalContent === cleanContent ? cleanBytes : Buffer.byteLength(finalContent, "utf8");
+			const finalBytes = finalContent === writeContent ? writeBytes : Buffer.byteLength(finalContent, "utf8");
 			const writeLine = `Successfully wrote ${finalBytes} bytes to ${displayPath}`;
 			let resultText = header ? `${header}\n${writeLine}` : writeLine;
 			if (stripped) {
 				resultText += `\nNote: auto-stripped hashline display prefixes from content before writing.`;
+			}
+			// A non-final batch entry returns before the batch's formatter runs: claim nothing yet.
+			const conventionNote =
+				batchRequest?.flush === false ? undefined : textFileConventionNote(applied, finalContent);
+			if (conventionNote) {
+				resultText += `\n${conventionNote}`;
 			}
 			if (madeExecutable) {
 				resultText += `\n${EXECUTABLE_NOTICE}`;

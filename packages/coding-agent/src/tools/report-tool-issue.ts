@@ -5,11 +5,11 @@
  * `xd://report_issue`, and the system prompt tells the model to write
  * `<tool>: <concise description>` there when auto-QA is enabled.
  *
- * Enabled by default (`dev.autoqa` defaults to true); `PI_AUTO_QA=0` or an
- * explicit `dev.autoqa: false` short-circuits injection entirely. When the
- * user is only enabled by default (never configured `dev.autoqa` themselves),
- * a persisted `dev.autoqaConsent: "denied"` also disables injection so a "No"
- * in the consent dialog fully turns the feature off.
+ * Disabled by default (`dev.autoqa` defaults to false); `PI_AUTO_QA=1` or an
+ * explicit `dev.autoqa: true` enables it, while `PI_AUTO_QA=0` or an explicit
+ * `dev.autoqa: false` short-circuits injection entirely. When the setting is
+ * left unconfigured, a persisted `dev.autoqaConsent: "denied"` also disables
+ * injection so a "No" in the consent dialog fully turns the feature off.
  * Records grievances to a local SQLite database; never throws from the device
  * dispatch path.
  *
@@ -21,8 +21,9 @@
  * read the persisted decision live without prompting. `PI_AUTO_QA_PUSH=1` bypasses
  * the dialog for headless environments.
  *
- * When the user grants consent, push is automatically active against the
- * bundled endpoint (`dev.autoqaPush.endpoint`, default `qa.omp.sh`). Each
+ * When the user grants consent, push is active only against a configured
+ * endpoint (`dev.autoqaPush.endpoint` or `PI_AUTO_QA_PUSH_URL`; empty by
+ * default, which means no push). Each
  * insert schedules a background flush that POSTs pending rows and marks them
  * pushed on HTTP 2xx. Rows the collector permanently refuses (400/413/422) are
  * isolated by bisecting the batch and parked with the server's error, so a
@@ -32,6 +33,7 @@
  */
 import { Database } from "bun:sqlite";
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import type { AgentToolResult } from "@oh-my-pi/pi-agent-core";
 import type { FetchImpl } from "@oh-my-pi/pi-ai";
@@ -69,13 +71,55 @@ export function isReportIssueToolCall(toolCall: { name: string; arguments?: Reco
 const MAX_TOOL_BYTES = 128;
 
 /**
- * Clamp a grievance to the collector's field limits.
+ * Remove the user's identity from grievance text. Reports quote paths and
+ * commands verbatim and leave the machine, so the home directory becomes `~`,
+ * and the login name becomes `<user>` in the forms that name the user: a home
+ * path the first rewrite missed (`/c/Users/<user>`, an encoded session dir
+ * `-Users-<user>-`, `~<user>`), a reverse-DNS label (`com.<user>.app`) and
+ * `<user>@host`. Elsewhere the name is left alone: logins such as `will`,
+ * `node`, `bin` or `test` are also words and directory names. `root` names no
+ * one, so only its home is rewritten.
+ */
+function redactUserIdentity(text: string): string {
+	let redacted = text;
+	const home = os.homedir();
+	// Case-insensitive throughout: Windows and default macOS volumes name the
+	// same home in any case (`c:\users\will`), and over-matching another
+	// casing only hides more.
+	if (home.length > 1) {
+		for (const form of new Set([home, home.replaceAll("\\", "/")])) {
+			const pattern = `(?<![\\p{L}\\p{N}_.-])${RegExp.escape(form)}(?![\\p{L}\\p{N}_-]|\\.[\\p{L}\\p{N}])`;
+			redacted = redacted.replace(new RegExp(pattern, "giu"), "~");
+		}
+	}
+	let user: string | undefined;
+	try {
+		user = os.userInfo().username;
+	} catch {
+		// No passwd entry for the uid (some containers): the home rewrite above still applies.
+	}
+	if (user && user !== "root") {
+		const name = RegExp.escape(user);
+		const pattern = new RegExp(
+			`(?<=(?<![\\p{L}\\p{N}])(?:Users|home)[/\\\\-]|~|(?<![\\p{L}\\p{N}])(?:com|org|net|io|dev)\\.)${name}(?![\\p{L}\\p{N}])|(?<![\\p{L}\\p{N}])${name}(?=@)`,
+			"giu",
+		);
+		redacted = redacted.replace(pattern, "<user>");
+	}
+	return redacted;
+}
+
+/**
+ * Prepare a grievance for storage and for the collector: redact the user's
+ * identity, then clamp to the collector's field limits.
  *
  * An over-long `tool` is prose the model put on line 1 instead of a tool name,
  * so the original line is kept at the head of the report and only the stored
  * name is truncated: nothing is lost and the row stops being a poison pill.
  */
-function clampGrievance(tool: string, report: string): { tool: string; report: string } {
+function normalizeGrievance(rawTool: string, rawReport: string): { tool: string; report: string } {
+	const tool = redactUserIdentity(rawTool);
+	const report = redactUserIdentity(rawReport);
 	if (Buffer.byteLength(tool, "utf8") <= MAX_TOOL_BYTES) return { tool, report };
 	return { tool: truncateHeadBytes(tool, MAX_TOOL_BYTES).text, report: `${tool}\n${report}` };
 }
@@ -89,13 +133,13 @@ function parseReportIssueBody(text: string): { tool: string; report: string } {
 	if (firstNewline >= 0) {
 		const tool = body.slice(0, firstNewline).trim();
 		const report = body.slice(firstNewline + 1).trim();
-		if (tool && report) return clampGrievance(tool, report);
+		if (tool && report) return normalizeGrievance(tool, report);
 	}
 	const colon = body.indexOf(":");
 	if (colon > 0) {
 		const tool = body.slice(0, colon).trim();
 		const report = body.slice(colon + 1).trim();
-		if (tool && report) return clampGrievance(tool, report);
+		if (tool && report) return normalizeGrievance(tool, report);
 	}
 	throw new ToolError(`Invalid report format. ${reportIssueDeviceUsage()}`);
 }
@@ -103,11 +147,12 @@ function parseReportIssueBody(text: string): { tool: string; report: string } {
 /**
  * Whether Auto-QA is active for this session.
  *
- * Precedence: explicit `dev.autoqa` (env `PI_AUTO_QA` or any settings layer) >
- * default-on unless the user previously denied consent. The denial veto only
- * applies to the default: explicitly configuring `dev.autoqa: true` re-enables
- * injection (recording still no-ops until consent is granted). Without settings,
- * only the env flag can enable it.
+ * Precedence: an explicit `dev.autoqa` (env `PI_AUTO_QA` or any settings layer)
+ * wins; otherwise the default applies, which is off. A previously denied consent
+ * vetoes only that default, never an explicit `dev.autoqa: true` (recording
+ * still no-ops until consent is granted, and nothing is pushed until a push
+ * endpoint is configured; `dev.autoqaPush.endpoint` is empty by default).
+ * Without settings, only the env flag can enable it.
  */
 export function isAutoQaEnabled(settings?: Settings): boolean {
 	if (!settings) return cfgDevAutoqa.envValue() ?? false;
@@ -445,9 +490,10 @@ async function performFlush(db: Database, config: PushConfig, options: FlushOpti
 			// leaking the user's machine name.
 			platform: process.platform,
 			arch: process.arch,
-			// Clamped on the way out so rows recorded before the record-time
-			// clamp existed still ship instead of poisoning every batch.
-			entries: batch.map(row => ({ ...row, ...clampGrievance(row.tool, row.report) })),
+			// Normalized on the way out so rows recorded before record-time
+			// clamping and redaction existed neither poison every batch nor
+			// ship the user's home directory.
+			entries: batch.map(row => ({ ...row, ...normalizeGrievance(row.tool, row.report) })),
 		});
 		const headers: Record<string, string> = { "content-type": "application/json" };
 		if (config.token) headers.authorization = `Bearer ${config.token}`;

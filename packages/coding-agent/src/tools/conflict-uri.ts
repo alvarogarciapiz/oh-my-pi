@@ -19,7 +19,6 @@ import {
 	type ParsedConflictUri,
 	spliceConflict,
 } from "./conflict-detect";
-import { invalidateFsScanAfterWrite } from "./fs-cache-invalidation";
 import type { ToolSession } from "./index";
 import { formatPathRelativeToCwd } from "./path-utils";
 import { formatTextWithMode, hashlineHeaderContext, prependHashlineHeader } from "./read-format";
@@ -145,7 +144,6 @@ async function resolveConflict(
 	const newContent = splice.text;
 
 	await writethroughNoop(absolutePath, newContent, signal);
-	invalidateFsScanAfterWrite(absolutePath);
 	session.bumpFileMutationVersion?.(absolutePath);
 	getEditStore(session).invalidate(absolutePath);
 	const history = session.conflictHistory;
@@ -396,7 +394,6 @@ async function resolveAllConflicts(
 		}
 
 		await writethroughNoop(absolutePath, text, signal);
-		invalidateFsScanAfterWrite(absolutePath);
 		session.bumpFileMutationVersion?.(absolutePath);
 		getEditStore(session).invalidate(absolutePath);
 		for (const entry of resolvedEntries) history.invalidate(entry.id);

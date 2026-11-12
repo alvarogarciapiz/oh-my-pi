@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { OmpErrors } from "@oh-my-pi/omptype";
 import type { Context, ImageContent, ModelSpec, TextContent } from "@oh-my-pi/pi-ai";
 import { buildModel } from "@oh-my-pi/pi-catalog/build";
 import { decorateContextImages } from "@oh-my-pi/pi-coding-agent/blob-broker/context-images";
@@ -6,6 +7,7 @@ import {
 	clampProviderContextImageBytes,
 	clampProviderContextImages,
 } from "@oh-my-pi/pi-coding-agent/session/provider-image-budget";
+import { ModelsConfigSchema } from "@oh-my-pi/pi-coding-agent/config/models-config-schema";
 
 const UMANS_MODEL = buildModel({
 	id: "umans-glm-5.2",
@@ -455,5 +457,54 @@ describe("provider context image budgets", () => {
 		};
 
 		expect(clampProviderContextImages(context, UMANS_MODEL)).toBe(context);
+	});
+});
+
+describe("configured imageCountBudget", () => {
+	const DRIVER_IA_SPEC: ModelSpec<"openai-completions"> = {
+		id: "driver-vision",
+		name: "driver-vision",
+		api: "openai-completions",
+		provider: "driver-ia",
+		baseUrl: "https://driver-ia.example.com/v1",
+		reasoning: false,
+		input: ["text", "image"],
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: 128000,
+		maxTokens: 4096,
+	};
+	const eightImages: Context = {
+		systemPrompt: [],
+		tools: [],
+		messages: Array.from({ length: 8 }, (_, index) => ({
+			role: "user",
+			content: [text(`text-${index}`), image(`image-${index}`)],
+			timestamp: index,
+		})),
+	};
+
+	it("replaces the provider default so a gateway with a higher limit keeps every image", () => {
+		const model = { ...buildModel(DRIVER_IA_SPEC), imageCountBudget: 20 };
+		expect(clampProviderContextImages(eightImages, model)).toBe(eightImages);
+	});
+
+	it("falls back to the provider default when the model sets none", () => {
+		const clamped = clampProviderContextImages(eightImages, buildModel(DRIVER_IA_SPEC));
+		expect(imageData(clamped)).toEqual(Array.from({ length: 5 }, (_, index) => `image-${index + 3}`));
+	});
+
+	it("rejects a non-positive imageCountBudget in models.yml", () => {
+		const checked = ModelsConfigSchema({
+			providers: {
+				"driver-ia": {
+					baseUrl: "https://driver-ia.example.com/v1",
+					apiKey: "sk-test",
+					api: "openai-completions",
+					models: [{ id: "driver-vision", imageCountBudget: 0 }],
+				},
+			},
+		});
+		if (!(checked instanceof OmpErrors)) throw new Error("expected the schema to reject imageCountBudget: 0");
+		expect(checked.summary).toContain("imageCountBudget a positive integer");
 	});
 });

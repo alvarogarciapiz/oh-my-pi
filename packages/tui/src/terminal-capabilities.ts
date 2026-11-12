@@ -1226,14 +1226,24 @@ export function getImageDimensions(base64Data: string, mimeType: string): ImageD
 	return null;
 }
 
+/** Terminal background as packed `0xRRGGBB`, used to flatten transparent pixels in SIXEL output. */
+export function getTerminalBackgroundColor(): number {
+	return 0x000000;
+}
+
 /**
  * SIXEL sequence for `base64Data` at the given pixel size, encoded on the JS
  * thread; `null` when the encode fails. For output that cannot wait for an
  * off-thread encode.
  */
-export function encodeSixelNow(base64Data: string, widthPx: number, heightPx: number): string | null {
+export function encodeSixelNow(
+	base64Data: string,
+	widthPx: number,
+	heightPx: number,
+	backgroundRgb = getTerminalBackgroundColor(),
+): string | null {
 	try {
-		return encodeSixel(new Uint8Array(Buffer.from(base64Data, "base64")), widthPx, heightPx);
+		return encodeSixel(new Uint8Array(Buffer.from(base64Data, "base64")), widthPx, heightPx, backgroundRgb);
 	} catch {
 		return null;
 	}

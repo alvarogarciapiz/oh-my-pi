@@ -89,13 +89,14 @@ describe("settings section sidebar", () => {
 	it("does not toggle the selected section's first setting", () => {
 		const comp = createSelector();
 		for (let i = 0; i < 7; i++) comp.handleInput("\x1b[C");
-		expect(cfgDevAutoqa.get(settings)).toBe(true);
+		// Auto QA is off by default; a click on the section must leave it off.
+		expect(cfgDevAutoqa.get(settings)).toBe(false);
 
 		clickOption(comp, "Developer");
-		expect(cfgDevAutoqa.get(settings)).toBe(true);
+		expect(cfgDevAutoqa.get(settings)).toBe(false);
 
 		clickOption(comp, "Developer");
-		expect(cfgDevAutoqa.get(settings)).toBe(true);
+		expect(cfgDevAutoqa.get(settings)).toBe(false);
 	});
 });
 

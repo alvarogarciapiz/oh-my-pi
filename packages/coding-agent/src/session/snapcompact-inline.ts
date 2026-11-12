@@ -23,6 +23,7 @@ import contextStub from "../prompts/system/snapcompact-context-stub.md" with { t
 import systemFramesNote from "../prompts/system/snapcompact-system-frames-note.md" with { type: "text" };
 import systemStub from "../prompts/system/snapcompact-system-stub.md" with { type: "text" };
 import toolResultNote from "../prompts/system/snapcompact-toolresult-note.md" with { type: "text" };
+import { modelImageBudget } from "./provider-image-budget";
 
 export type SnapcompactSystemPromptMode = "none" | "agents-md" | "all";
 
@@ -318,7 +319,7 @@ export function estimateInlineSavings(input: {
 	const shape = snapcompact.resolveShape(model, options.shape);
 	const tokenizer = new Tokenizer(model);
 	const existingImages = countMessageImages(input.messages);
-	const budget = snapcompact.providerImageBudget(model.provider) - existingImages;
+	const budget = modelImageBudget(model) - existingImages;
 
 	const candidates: InlineToolResultCandidate[] = [];
 	if (options.renderToolResults) {
@@ -459,7 +460,7 @@ export class SnapcompactInlineTransformer {
 		const shape = snapcompact.resolveShape(model, options.shape);
 		const shapeKey = JSON.stringify(shape);
 		const tokenizer = new Tokenizer(model);
-		const budget = snapcompact.providerImageBudget(model.provider) - countMessageImages(context.messages);
+		const budget = modelImageBudget(model) - countMessageImages(context.messages);
 		if (budget <= 0) return context;
 
 		const messages = [...context.messages];

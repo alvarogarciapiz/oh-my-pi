@@ -23,7 +23,7 @@
 			"@oh-my-pi/pi-catalog": "18.9.1",
 			"@oh-my-pi/pi-coding-agent": "18.9.1",
 			"@oh-my-pi/pi-mnemopi": "18.9.1",
-			"@oh-my-pi/pi-natives": "18.9.1",
+			"@oh-my-pi/pi-natives": "18.18.9",
 			"@oh-my-pi/pi-tui": "18.9.1",
 			"@oh-my-pi/pi-utils": "18.9.1",
 			"@oh-my-pi/pi-wire": "18.9.1",
@@ -202,7 +202,7 @@
 			"oxfmt"
 		]
 	},
-	"packageManager": "bun@>=1.4",
+	"packageManager": "bun@>=1.4.4",
 	"patchedDependencies": {
 		"@ark/schema@0.56.2": "patches/@ark%2Fschema@0.56.2.patch",
 		"puppeteer-core@25.3.0": "patches/puppeteer-core@25.3.0.patch"

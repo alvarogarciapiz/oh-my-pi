@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { formatTaskResultSummary } from "@oh-my-pi/pi-coding-agent/task/result-summary";
+import { formatTaskResultSummary, INLINE_OUTPUT_CHARS } from "@oh-my-pi/pi-coding-agent/task/result-summary";
 import type { SingleResult } from "@oh-my-pi/pi-tui/tools/task";
 
 function settledResult(output: string): SingleResult {
@@ -30,7 +30,7 @@ describe("formatTaskResultSummary", () => {
 		// the first line is `{` and the second is one multi-KB string. Cutting the
 		// preview at the last newline inside the budget used to leave the parent
 		// with a lone `{` and no idea what the child found.
-		const report = "# Port table\n\n| tool | file |\n|---|---|\n".repeat(400);
+		const report = "# Port table\n\n| tool | file |\n|---|---|\n".repeat(600);
 		const output = JSON.stringify({ summary: "Audit of 37 tools", report }, null, 2);
 		const summary = formatTaskResultSummary(settledResult(output), {
 			totalDurationMs: 1200,
@@ -44,7 +44,7 @@ describe("formatTaskResultSummary", () => {
 	});
 
 	it("keeps a markdown preview on a line boundary when one is in range", () => {
-		const lines = Array.from({ length: 400 }, (_, i) => `- item ${i} ${"x".repeat(20)}`);
+		const lines = Array.from({ length: 700 }, (_, i) => `- item ${i} ${"x".repeat(20)}`);
 		const summary = formatTaskResultSummary(settledResult(lines.join("\n")), {
 			totalDurationMs: 5,
 		});
@@ -59,6 +59,37 @@ describe("formatTaskResultSummary", () => {
 		});
 		expect(summary).toContain("<output>\ndone\n</output>");
 		expect(summary).not.toContain("<preview");
+	});
+
+	it("inlines a report past the preview size whole", () => {
+		// Parents re-read most cut reports through agent://<id>; one that fits the
+		// inline budget must arrive whole so its closing findings are not lost.
+		const findings = Array.from({ length: 12 }, (_, i) => `F${i + 1}: ${"detail ".repeat(100).trimEnd()}`);
+		const output = findings.join("\n\n");
+		expect(output.length).toBeGreaterThan(5000);
+		expect(output.length).toBeLessThan(INLINE_OUTPUT_CHARS);
+		const summary = formatTaskResultSummary(settledResult(output), { totalDurationMs: 5 });
+		expect(summary).toContain(`<output>\n${output}\n</output>`);
+		expect(summary).not.toContain("<preview");
+	});
+
+	it("previews an inline-sized report whose verification block would overflow async delivery", () => {
+		const output = "y".repeat(INLINE_OUTPUT_CHARS);
+		const checks = Array.from({ length: 4 }, (_, i) => ({
+			criterion: `tests_passed:bun test suite-${i}`,
+			outcome: "holds" as const,
+			detail: `[r${i}] ${"evidence ".repeat(20).trimEnd()}`,
+		}));
+		const summary = formatTaskResultSummary(
+			{
+				...settledResult(output),
+				verification: { checks, citations: { cited: 4, resolved: 4, failed: 0, unknown: 0 } },
+			},
+			{ totalDurationMs: 5 },
+		);
+		expect(summary).toContain("<preview");
+		expect(summary).toContain("<verification");
+		expect(summary.length).toBeLessThanOrEqual(12_000);
 	});
 
 	it("names the failure when the preview is the text streamed before it", () => {

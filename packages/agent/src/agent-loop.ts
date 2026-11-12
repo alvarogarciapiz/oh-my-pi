@@ -96,6 +96,7 @@ import type {
 	SteeringInterruptSource,
 	SteeringQueueState,
 	StreamFn,
+	ToolApprovalDecision,
 } from "./types";
 import {
 	ASIDE_MESSAGE_COMMIT,
@@ -1769,7 +1770,7 @@ async function runLoopBody(
 						: [...live, ...((await config.getSteeringMessages?.(signal)) || [])];
 					if (hasMoreToolCalls) {
 						// Mid-work: fold any non-interrupting asides into the next turn alongside steering.
-						const asides = signal?.aborted ? [] : resolveAsides(await config.getAsideMessages?.());
+						const asides = signal?.aborted ? [] : resolveAsides(await config.getAsideMessages?.("work"));
 						pendingMessages = asides.length > 0 ? [...steering, ...asides] : steering;
 					} else {
 						// Stop boundary: only steering (live user input) forces another turn here. Leave
@@ -1797,7 +1798,7 @@ async function runLoopBody(
 			// above and this yield point (e.g. queued while onBeforeYield ran). Without
 			// this poll it would strand in the queue until the next manual prompt.
 			const lateSteering = signal?.aborted ? [] : (await config.getSteeringMessages?.(signal)) || [];
-			const asideMessages = signal?.aborted ? [] : resolveAsides(await config.getAsideMessages?.());
+			const asideMessages = signal?.aborted ? [] : resolveAsides(await config.getAsideMessages?.("stop"));
 			const followUpMessages = signal?.aborted ? [] : (await config.getFollowUpMessages?.(signal)) || [];
 			if (lateSteering.length > 0 || asideMessages.length > 0 || followUpMessages.length > 0) {
 				// Set as pending so the inner loop processes them before stopping.
@@ -3184,22 +3185,21 @@ async function speculativeFinalCalls(
 }
 
 /**
- * Resolves a tool's scheduling mode for one call. A resolver function sees the
- * prepared (possibly hook-revised) args; a throwing resolver must not take down
- * the whole batch, so it falls back to the safe (serial) mode.
+ * A tool's batch concurrency for one call: an unset mode is shared, and a
+ * throwing per-call resolver is exclusive — the ordering that cannot race —
+ * rather than taking down the whole batch.
  */
-export function resolveToolConcurrencyMode(
-	concurrencyMode: AgentTool["concurrency"] | undefined,
+export function resolveToolConcurrency(
+	tool: AgentTool<any, any, any> | undefined,
 	args: Record<string, unknown>,
 ): "shared" | "exclusive" {
-	if (typeof concurrencyMode === "function") {
-		try {
-			return concurrencyMode(args);
-		} catch {
-			return "exclusive";
-		}
+	const mode = tool?.concurrency;
+	if (typeof mode !== "function") return mode ?? "shared";
+	try {
+		return mode(args);
+	} catch {
+		return "exclusive";
 	}
-	return concurrencyMode ?? "shared";
 }
 
 /**
@@ -3448,7 +3448,11 @@ async function executeToolCalls(
 		flushResultMessages();
 	};
 
-	const runTool = async (record: (typeof records)[number], index: number): Promise<void> => {
+	const runTool = async (
+		record: (typeof records)[number],
+		index: number,
+		earlierEffectsSettled: Promise<void> | undefined,
+	): Promise<void> => {
 		// A pending interrupt preempts not-yet-started *interruptible* waits so
 		// the message injects promptly instead of sitting out a `wait`.
 		// Non-interruptible work is never skipped, whatever the source: the
@@ -3548,7 +3552,7 @@ async function executeToolCalls(
 				record.args = executionArgs;
 
 				const speculativeOutcome = speculationCoordinator
-					? await speculationCoordinator.claim(tool, toolCall, executionArgs)
+					? await speculationCoordinator.claim(tool, toolCall, executionArgs, earlierEffectsSettled, record.signal)
 					: undefined;
 				if (speculativeOutcome) {
 					// Normalize exactly like the ordinary execute path below: third-party
@@ -3576,6 +3580,7 @@ async function executeToolCalls(
 						toolCalls: toolCallInfos,
 						steeringSignal: steeringSoftController.signal,
 						providerMetadata: toolCall.providerMetadata,
+						...(earlierEffectsSettled ? { earlierEffectsSettled } : {}),
 						addAdditionalContext: context => {
 							if (isNonBlankContext(context)) record.reportedContext.push(context);
 						},
@@ -3714,6 +3719,7 @@ async function executeToolCalls(
 
 	let lastExclusive: Promise<void> = Promise.resolve();
 	let sharedTasks: Promise<void>[] = [];
+	let sharedEffects: Promise<void>[] = [];
 	const tasks: Promise<void>[] = [];
 
 	// While tool calls are in flight, queued steering or interrupting IRC would
@@ -3791,15 +3797,32 @@ async function executeToolCalls(
 			: undefined;
 	for (let index = 0; index < records.length; index++) {
 		const record = records[index];
-		const concurrency = resolveToolConcurrencyMode(record.tool?.concurrency, record.args);
+		const concurrency = resolveToolConcurrency(record.tool, record.args);
 		const start = concurrency === "exclusive" ? Promise.all([lastExclusive, ...sharedTasks]) : lastExclusive;
-		const task = start.then(() => runTool(record, index));
+		const earlierEffectsSettled =
+			concurrency === "shared" && sharedEffects.length > 0
+				? Promise.allSettled(sharedEffects).then(() => undefined)
+				: undefined;
+		const task = start.then(() => runTool(record, index, earlierEffectsSettled));
 		tasks.push(task);
 		if (concurrency === "exclusive") {
 			lastExclusive = task;
 			sharedTasks = [];
+			sharedEffects = [];
 		} else {
 			sharedTasks.push(task);
+			// A dynamic approval is asked with the prepared arguments, as concurrency
+			// is above; one that throws, or that says anything but "read", counts as
+			// a call that may write.
+			const approval = record.tool?.approval;
+			let decision: ToolApprovalDecision | undefined;
+			try {
+				decision = typeof approval === "function" ? approval(record.args) : approval;
+			} catch {
+				decision = undefined;
+			}
+			const tier = typeof decision === "string" ? decision : (decision?.tier ?? "exec");
+			if (tier !== "read") sharedEffects.push(task);
 		}
 	}
 	try {

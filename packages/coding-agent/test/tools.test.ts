@@ -982,7 +982,11 @@ describe("Coding Agent Tools", () => {
 			fs.writeFileSync(testFile, `${firstLine}\n${tail}`);
 			expect(fs.statSync(testFile).size).toBeGreaterThan(4 * 1024 * 1024);
 
-			const result = await readTool.execute("test-hashline-preview-large", { path: `${testFile}:1-1` });
+			// With the column cap on, the line's cut display fits the page; only an uncapped read hits this branch.
+			const uncappedReadTool = wrapToolWithMetaNotice(
+				new ReadTool(createTestToolSession(testDir, Settings.isolated({ "tools.outputMaxColumns": 0 }))),
+			);
+			const result = await uncappedReadTool.execute("test-hashline-preview-large", { path: `${testFile}:1-1` });
 			const output = getTextOutput(result);
 
 			expect(output).toContain("Hashline output requires full lines");
@@ -1021,7 +1025,8 @@ describe("Coding Agent Tools", () => {
 			const artifactsDir = path.join(testDir, "artifact-limit-session");
 			fs.mkdirSync(artifactsDir, { recursive: true });
 			fs.writeFileSync(path.join(artifactsDir, "7.mcp.log"), `skip\n{\n${"x".repeat(60 * 1024)}\ntail`);
-			const artifactSession = createTestToolSession(testDir, Settings.isolated(), {
+			// Uncapped, so the 60KB line is charged its full size rather than its cut display.
+			const artifactSession = createTestToolSession(testDir, Settings.isolated({ "tools.outputMaxColumns": 0 }), {
 				localProtocolOptions: {
 					getArtifactsDir: () => artifactsDir,
 					getSessionId: () => "artifact-limit-session",
@@ -1309,7 +1314,7 @@ describe("Coding Agent Tools", () => {
 			fs.mkdirSync(childDir, { recursive: true });
 			writeFileWithMtime(path.join(testDir, ".hidden-root"), "hidden", base + 20_000);
 			writeFileWithMtime(path.join(testDir, ".DS_Store"), "mac metadata", base + 25_000);
-			writeFileWithMtime(path.join(testDir, "node_modules", "pkg", "index.js"), "ignored", base + 24_000);
+			writeFileWithMtime(path.join(testDir, "node_modules", "pkg", "index.js"), "dependency", base + 24_000);
 			for (let i = 0; i < 13; i += 1) {
 				const fileName = `root-${String(i).padStart(2, "0")}.txt`;
 				writeFileWithMtime(path.join(testDir, fileName), fileName, base + i);
@@ -1327,7 +1332,9 @@ describe("Coding Agent Tools", () => {
 			expect(output).toContain(".");
 			expect(output).toContain(".hidden-root");
 			expect(output).not.toContain(".DS_Store");
-			expect(output).not.toContain("node_modules");
+			expect(output).toContain("node_modules/");
+			expect(output).toContain("pkg/");
+			expect(output).not.toContain("index.js");
 			expect(output).toContain("root-00.txt");
 			expect(output).toContain("root-01.txt");
 			expect(output).toContain("root-12.txt");
@@ -2803,6 +2810,31 @@ function b() {
 			expect(output).toMatch(/\*2\|match line/);
 		});
 
+		it("searches all of a named file larger than the directory-walk window", async () => {
+			const testFile = path.join(testDir, "manual.txt");
+			await Bun.write(
+				testFile,
+				`${"x".repeat(2 * 1024 * 1024)}\nEARLYNEEDLE\n${"x".repeat(5 * 1024 * 1024)}\nLATENEEDLE\n`,
+			);
+
+			const whole = getTextOutput(
+				await searchTool.execute("grep-large-whole", { pattern: "EARLYNEEDLE|LATENEEDLE", path: testFile }),
+			);
+			expect(whole).toMatch(/\*2\|EARLYNEEDLE/);
+			expect(whole).toMatch(/\*4\|LATENEEDLE/);
+
+			const ranged = getTextOutput(
+				await searchTool.execute("grep-large-range", { pattern: "LATENEEDLE", path: `${testFile}:3-` }),
+			);
+			expect(ranged).toMatch(/\*4\|LATENEEDLE/);
+
+			// Multiline matching holds the file in memory, so it reads only the leading window and says so.
+			const multiline = getTextOutput(
+				await searchTool.execute("grep-large-multiline", { pattern: "x\nLATENEEDLE", path: testFile }),
+			);
+			expect(multiline).toMatch(/^No matches in searched content \(multiline search limited large files/);
+			expect(multiline).toContain("manual.txt");
+		});
 		it("flags a zero-match search as contextually useless", async () => {
 			fs.writeFileSync(path.join(testDir, "plain.txt"), "nothing interesting here\n");
 

@@ -4,6 +4,7 @@
 
 ### Added
 
+- Added `imageCountBudget` to custom models and `modelOverrides` in models.yml: a positive integer that replaces the provider's default per-request image budget, so a gateway with a higher limit keeps every image (upstream #15969)
 - Added `archive.find(query)` and `archive.open(id, {line})` in eval: verbatim full-text search over past sessions (assistant text, tool calls and results, summaries), one ranked row per session with a snippet and recap, indexed incrementally in a background worker (`archive.contentSearch`, on by default; `archive.indexThinking` opt-in). Without eval the same search is the `session_search` tool
 - Added the shared `team_task` board (`task.team.enabled`, on by default when subagents are possible): agents in one tree create, claim and complete tasks with dependencies, compare-and-set revisions and write-scope overlap warnings; state lives in the root session
 - Added automatic nested instructions (`contextFiles.nestedAutoInject`, on by default): the first `read`/`write`/`edit` inside a subdirectory injects its `AGENTS.md`/`CLAUDE.md` content (and later updates or removals) without an extra read; capped by `contextFiles.nestedMaxBytes`
@@ -49,6 +50,8 @@
 
 ### Changed
 
+- Messages from other agents (IRC mail) now reach the model as user turns attributed to the sending agent instead of developer-authority messages
+- Auto-QA tool-issue reporting (`dev.autoqa`) is now off by default and `dev.autoqaPush.endpoint` is empty by default, so no grievances are recorded or pushed until you enable it and configure an endpoint
 - Replies now match their technical depth to you, per topic: terms you haven't used get a one-clause gloss on first use, terms you use yourself aren't explained, and reasoning reads as one linked thread instead of bare fragments. A short question never lowers the depth; it drops only when you ask ("what is X?", "simpler") or say you aren't technical, in which case answers get shorter and focus on impact and decisions
 - The hidden eval-state note added when a session that used `eval` is resumed or rewound no longer makes the agent re-run earlier eval work or tell you about kernels: it says earlier results in the transcript stay valid and setup is redefined only before eval code that needs it
 - The agent now introduces itself as MarIA Code, Unicaja's technical agent, in both the coding and the general system prompt
@@ -77,8 +80,55 @@
 - Compaction summaries (handoff and soft) now end with three blocks built from the summarized history rather than written by the model: exact identifiers taken from full, untruncated tool output (error lines, commit/container hashes, issue and ticket refs, URLs), your own messages quoted verbatim, and a pointer to `history://current/full`; all three carry over to later compactions within fixed budgets
 - `history://current/full` (this session's whole uncompacted branch, readable with `read` and `grep`) now works in every session that owns its branch, not only with `compaction.experimentalContextManagement`
 - The `edit` tool in `replace` mode and the `grep`, `find` and `bash` tools now carry worked call examples in their descriptions
+- Subagent results up to 11,500 characters now reach the parent whole instead of as a 5,000-character preview pointing at `agent://<id>`; an envelope whose verification, error or merge summary would exceed async delivery still falls back to the preview (upstream a88548f310, 2e0a3b65ca, ec1eae8f3d)
+- `wait` no longer ends on an `agent://all` broadcast (it reaches the agent after the wait returns, without interrupting it), and jobs settling within 1.5 s of the first come back in one result (upstream adcb8800b6, without the reply-wait cap change)
+- The `bash` tool now runs on pi's own bash 5.3 engine (replacing brush) with the v18.18.9 native runtime: per-run stdio, EXIT traps, `env -i`, `timeout`/`nohup`/`git` as shell tools, and native filesystem/search performance work; the old filesystem scan cache invalidation hook is gone, and SIXEL encodes take the terminal background colour (upstream 44711a78c1 and the v18.18.9 `crates/` + `packages/natives` sync, N-45/N-46/N-47)
 ### Fixed
 
+- Fixed `grep` on an explicitly named file larger than 4MB claiming only its first 4MB was searched while native grep streamed the whole file; the note now appears only for multiline patterns, which still read the leading 4MB (upstream d52fd79e4b)
+- Fixed the eval state reminder kept after compaction saying no eval kernel is running while a Python kernel is alive; Python kernels now report their generation, alive/dead status, interpreter and loaded scripts like JavaScript kernels (upstream #16032/1a8ba3f87d)
+- Fixed `read` on a directory hiding `node_modules`, `.git`, build outputs and caches; explicit directory listings now show every child, while the startup workspace tree still prunes them (upstream #87/dcb4d4a5c4, N-40)
+- Fixed hashline edits anchored on a line that `read` or `grep` showed cut at the column cap dropping that line's unseen tail; only fully displayed rows count as seen, and such an edit asks for a `:raw` read of the line first (upstream #15649/818cf7fb77, N-37)
+- Fixed `edit` moves dropping executable permissions in hashline, patch, and apply_patch modes (upstream #16042, N-37)
+- Fixed `write` replacing a CRLF or UTF-8 BOM file with LF text rewriting every line ending and dropping the BOM; it now keeps the replaced file's CRLF line endings and BOM, as `edit` does, and says so in its result (upstream #16575, N-37)
+- Fixed a `read` range whose leading context line is too wide for the page hiding the requested lines; the read now retries from the requested line, and `write` only treats a bracketed `[Some lines truncated to …]` line as the column-cap notice (upstream 1e479b58d7, N-37)
+- Fixed `write` accepting a read projection whose long lines were shown cut at the column cap; writing it back now fails with `incomplete read projection` instead of truncating those lines (upstream 7dc946c9de, N-37)
+- Fixed `grep` and `glob` treating a `;` list that starts with an internal URL and names local files (`artifact://1;notes.txt`) as one URL; each target is now searched (upstream #531, N-40)
+- Fixed `read` pages ending early on files with lines wider than `tools.outputMaxColumns`: a column-cut line is now charged its displayed width against the page budget instead of its source size (upstream 3b04762106, N-40)
+- Fixed `grep` trimming a file to its first matches in a multi-file search without telling the agent; the result now names the trimmed files and how to see the rest (upstream #16594, N-40)
+- Fixed `read` returning a file's old content when an earlier `bash` (or other writing) call in the same message changed it; the read now waits for those calls to settle (upstream 491f5f5b03, N-39)
+- Fixed a subagent's `yield` result reaching its parent as its reply to a peer message or `agent://all` broadcast that arrived as it finished; such messages now get a wake turn of their own after the result, and a peer that wrote directly still receives the reply (upstream #16583)
+- Fixed subagents that were cancelled, interrupted, timed out, or killed refusing messages as hard-aborted; a message or Agent Hub revive now resumes them from their transcript (upstream ae29413e87)
+- Fixed a task worker messaged while still starting up running without its `tasks[].task` assignment; the message now waits for the assignment's turn (upstream b3baadf2a3)
+- Fixed task job deliveries naming `agent://<job-id>`/`history://<job-id>` for jobs whose id is not the agent id, and offering `agent://` for turns that published no output (upstream #17112)
+- Fixed `proc://<agent>` not finding a woken subagent's running job when its turn ran under a suffixed job id (upstream #17020)
+- Fixed a warm-revived subagent getting the parent-owned `todo` tool back (upstream #16281)
+- Fixed the second of two extension asides sent together to an idle session being lost (upstream #16292)
+- Fixed a subagent woken by an IRC message relaying every line of text it wrote that turn instead of just its final answer (upstream #16302)
+- Fixed every idle agent woken by an `agent://all` broadcast answering the sender automatically; a direct message still gets the woken agent's turn back (upstream #16312)
+- Fixed `wait` failing with "Skipped due to a queued background completion" when the job it was waiting for had just finished (upstream #16301)
+- An automatic retry fallback hop no longer re-renders the system prompt for the new model (it rebuilds only for a different edit mode or tool-description handling), and a live subagent rebuild keeps the peer list its prompt showed until the rest of the prompt changes, so the provider prompt cache survives (upstream #17014)
+- Waking a parked subagent no longer re-sends its whole conversation without the prompt cache when other agents started, finished or parked meanwhile: the revive renders the peer roster its prompt last held (upstream #16369)
+- Forks of a compacted session now keep the eval runtime context: the eval state snapshot is persisted at compaction boundaries and reused on session rebuilds (upstream #15695)
+- A settings reload that brings a value this build cannot read (such as an `edit.mode` written by a newer omp) now keeps that setting's last good value instead of falling back to the default, while the rest of the edit applies
+- Fixed a failed streamed edit preview ending the whole run without retry: the harness now re-drives the turn with the preview diagnostic so the model can read the file again and correct the patch, and gives up with a notice only after two recoveries
+- `/resume` into another session now cancels the previous session's background jobs, as `/new` does, instead of delivering their results into the resumed session and starting a turn there
+- RPC sessions now report settled (`isSettled: true`, `session_settled`) after a turn whose failed `todo` call queued a reminder for the next prompt, instead of appearing busy until another prompt arrives
+- Fixed an interrupted prompt's late setup cleanup marking the next prompt idle early, allowing overlapping submissions and releasing sleep prevention mid-turn
+- Fixed background completions (subagent results, launch completions, asides) restarting a run the user stopped with Esc: they now fold into context until a later turn ends on its own, and an Esc that stopped nothing no longer suppresses later background wakes
+- Fixed `/session delete` from RPC/ACP hosts leaving the live agent attached to the deleted file: the session now switches to a new, resumable session before the file is deleted and reports the new session id and path
+- Fixed SDK embedders leaking every disposed `AgentSession` that owned its MCP manager, so long-lived processes that create and dispose many sessions grew memory without bound
+- Fixed large session files ending in a truncated record not being repaired on load, unlike small ones
+- Fixed a rewritten session file being published with a partial transcript when a backpressured streamed write failed; every write is now confirmed before the file replaces the old one
+- Fixed thin images (toolbar crops, narrow strips) reaching the model with a short edge below the vision minimum: they are now padded to the floor without stretching their content, and read and screenshot notes explain how to map padded coordinates back to the source
+- Fixed TTSR rule matching rescanning a long unterminated streamed line on every delta (quadratic in the line length); rescans are now paced and the final check still reports every match
+- Fixed bash commands hanging on `git rebase -i` when a config-file `sequence.editor` is set, and on Git Credential Manager GUI/browser auth dialogs: the bash tool now exports `GIT_SEQUENCE_EDITOR=true` and `GCM_INTERACTIVE=never`
+- Fixed project discovery walking up from a temporary directory (`/tmp`) or another user's home and loading their `.omp`/`AGENTS.md` config: project walks now stop at temporary roots and foreign user config roots
+- Fixed `/memory clear` in one project deleting the memory state of every other project that shares the same agent directory
+- Fixed the models config migration writing `models.yml` readable by other users and dropping every custom provider when the write was interrupted; the migrated file is now published atomically with owner-only permissions
+- Fixed the plugin lockfile being written readable by other users on the machine; it is now created with owner-only (0600) permissions
+- Fixed the compiled `omp` binaries carrying CVE-2026-111497 (Brotli decoder out-of-bounds write) and CVE-2026-91403 (compromised eMudhra CAs still trusted): builds and CI now require Bun 1.4.4 or newer through the root `packageManager` floor
+- Fixed Auto-QA grievances sharing your home directory and login name: paths under your home are sent as `~/…` and the login name inside labels and paths as `<user>`, including reports recorded before this fix
 - Fixed the system prompt claiming user content is sanitized: instructions found in tool output, web pages, fetched documents, MCP results and ordinary files are now treated as data, never obeyed
 - Fixed skill self-improvement silently dropping an edit when the curator sent several edits to one skill file in the same reply
 - Fixed the agent deleting production resources without confirmation on open-ended requests such as "clean up the old resources": it now lists the exact targets with evidence and asks first, while requests that name exact targets still run without confirmation

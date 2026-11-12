@@ -23,6 +23,8 @@ import { cfgLaunchEnabled } from "./settings";
 
 const waitSchema = type({});
 const WAIT_MAX_MS = 30 * 60_000;
+/** Completions landing within this window of the first come back in one result. */
+const WAIT_SETTLE_WINDOW_MS = 1500;
 const PROGRESS_INTERVAL_MS = 500;
 
 interface WaitMessaging {
@@ -76,7 +78,14 @@ export class WaitTool implements AgentTool<typeof waitSchema, CoordinationDetail
 		// Refreshes owned-service tracking only; jobs are in-process, so a hung
 		// broker must not turn every wait into an error.
 		if (cfgLaunchEnabled.get(this.session.settings)) {
-			await listServicesTolerant(this.session, signal);
+			try {
+				await listServicesTolerant(this.session, signal);
+			} catch (error) {
+				// An interrupt landing during the refresh (most often the notice
+				// of the job this wait is for) ends the wait as one landing just
+				// after it does: the checks below and the aborted wake path.
+				if (signal?.reason !== TOOL_INTERRUPT_ABORT_REASON) throw error;
+			}
 			const queued = takeQueuedMessage(messaging);
 			if (queued && messaging) return messageResult(messaging.senderId, queued);
 		}
@@ -113,9 +122,10 @@ export class WaitTool implements AgentTool<typeof waitSchema, CoordinationDetail
 		const serviceLeg = serviceRunning ? waitForOwnedServiceCompletion(this.session, serviceAbort.signal) : undefined;
 		const busAbort = new AbortController();
 		// Only `busAbort` can reject this leg, and it fires once the wait has settled.
+		// Broadcast legs ask the caller nothing: they inject after the wait returns.
 		const busLeg = messaging
 			? IrcBus.global()
-					.wait(messaging.senderId, {}, 0, busAbort.signal)
+					.wait(messaging.senderId, { directOnly: true }, 0, busAbort.signal)
 					.catch(() => null)
 			: undefined;
 		const { promise: timeout, resolve: timedOut } = Promise.withResolvers<void>();
@@ -135,13 +145,26 @@ export class WaitTool implements AgentTool<typeof waitSchema, CoordinationDetail
 		if (jobs.length > 0) emitProgress();
 		let wake: "job" | "message" | "service" | "timeout" | "abort";
 		try {
-			wake = await Promise.race([
-				...jobs.map(job => job.promise.then(() => "job" as const)),
+			const otherLegs = [
 				...(busLeg ? [busLeg.then(() => "message" as const)] : []),
 				...(serviceLeg ? [serviceLeg.then(() => "service" as const)] : []),
 				timeout.then(() => "timeout" as const),
 				abort.promise.then(() => "abort" as const),
-			]);
+			];
+			wake = await Promise.race([...jobs.map(job => job.promise.then(() => "job" as const)), ...otherLegs]);
+			if (wake === "job" && jobs.some(job => job.status === "running")) {
+				const settle = Promise.withResolvers<void>();
+				const settleTimer = setTimeout(settle.resolve, WAIT_SETTLE_WINDOW_MS);
+				try {
+					wake = await Promise.race([
+						Promise.all(jobs.map(job => job.promise)).then(() => "job" as const),
+						settle.promise.then(() => "job" as const),
+						...otherLegs,
+					]);
+				} finally {
+					clearTimeout(settleTimer);
+				}
+			}
 		} finally {
 			clearTimeout(timer);
 			clearInterval(progressTimer);

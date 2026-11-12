@@ -693,6 +693,12 @@ export async function splitDelimitedPathEntry(
 	options: {
 		splitter?: PathEntrySplitter;
 		routedUrlPredicate?: (entry: string) => boolean;
+		/**
+		 * Split a `;` list that starts with an internal URL and also names existing
+		 * local paths (`artifact://1;notes.txt`). Search tools opt in. Rewrite tools
+		 * leave this off so a `;` inside one internal URL cannot select an extra file.
+		 */
+		mixedLocalPaths?: boolean;
 	} = {},
 ): Promise<string[] | null> {
 	const normalizedEntry = normalizePathLikeInput(entry);
@@ -701,6 +707,17 @@ export async function splitDelimitedPathEntry(
 	if (options.routedUrlPredicate?.(normalizedEntry)) {
 		const parts = await tryDelimitedPathSplit(normalizedEntry, cwd, splitter, "semicolon", "none");
 		return parts?.every(options.routedUrlPredicate) ? parts : null;
+	}
+	if (options.mixedLocalPaths === true && isInternalUrlPath(normalizedEntry)) {
+		// `splitMixedUrlPathList` declines unless every non-URL part is an
+		// existing literal path, so a URL whose own path contains `;`
+		// (`local://report;`) stays one resource.
+		const mixed = await splitMixedUrlPathList(
+			normalizedEntry,
+			cwd,
+			part => isInternalUrlPath(part) || InternalUrlRouter.instance().canResolve(part),
+		);
+		if (mixed && mixed.length > 1) return mixed;
 	}
 	if (isInternalUrlPath(normalizedEntry)) return null;
 	// A real POSIX file may contain a delimiter and a selector-shaped tail
@@ -763,7 +780,7 @@ export async function splitMixedUrlPathList(
 export async function expandDelimitedPathEntries(
 	entries: readonly string[],
 	cwd: string,
-	options: { splitter?: PathEntrySplitter } = {},
+	options: { splitter?: PathEntrySplitter; mixedLocalPaths?: boolean } = {},
 ): Promise<string[]> {
 	const expanded: string[] = [];
 	for (const entry of entries) {

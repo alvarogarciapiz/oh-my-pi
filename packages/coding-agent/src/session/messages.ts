@@ -1129,12 +1129,14 @@ function convertOne(m: AgentMessage, interruptedNext: boolean): Message[] {
 				const converted = convertMessageToLlm(wrapSteeringUserMessage(m));
 				return converted ? [converted] : [];
 			}
-			if (isUserInvokedSkillPrompt(m)) {
+			// Agent-to-agent mail is user-turn content attributed to an agent, never developer authority.
+			const ircIncoming = m.customType === "irc:incoming";
+			if (ircIncoming || isUserInvokedSkillPrompt(m)) {
 				return [
 					{
 						role: "user",
 						content: customMessageContentToLlmContent(m.content),
-						attribution: "user",
+						attribution: ircIncoming ? "agent" : "user",
 						timestamp: m.timestamp,
 					},
 				];

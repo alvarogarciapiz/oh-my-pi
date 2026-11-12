@@ -3,7 +3,7 @@
  *
  * Replaces the old auto-reply model: a `send` never blocks on the recipient
  * generating anything. Delivery resolves the recipient via the global
- * AgentRegistry — parked agents are revived through the
+ * AgentRegistry — parked and killed agents are revived through the
  * AgentLifecycleManager, idle agents are woken with a real turn, and busy
  * agents receive the message as a non-interrupting aside at the next step
  * boundary (see AgentSession.deliverIrcMessage).
@@ -16,9 +16,25 @@ import { AgentRegistry, MAIN_AGENT_ID } from "../registry/agent-registry";
 import type { CustomMessage } from "../session/messages";
 
 interface IrcWaiter {
-	from?: string;
+	filter: IrcWaitFilter;
 	resolve: (msg: IrcMessage) => void;
 	cancel: () => void;
+}
+
+/** Which messages a bus {@link IrcBus.wait} consumes. */
+export interface IrcWaitFilter {
+	/** Only messages from this agent. */
+	from?: string;
+	/**
+	 * Skip broadcast legs, which ask the waiter nothing: they reach it through
+	 * ordinary delivery, a non-interrupting aside when it is busy.
+	 */
+	directOnly?: boolean;
+}
+
+/** Whether a bus wait under `filter` consumes `msg`. */
+export function ircWaitAccepts(filter: IrcWaitFilter, msg: IrcMessage): boolean {
+	return (filter.from === undefined || msg.from === filter.from) && (!filter.directOnly || !msg.broadcast);
 }
 
 /** Mailbox cap per agent; oldest messages are dropped beyond it. */
@@ -103,13 +119,6 @@ export class IrcBus {
 				error: `Unknown agent "${message.to}" — check the subagent roster or read history:// for known peers.`,
 			};
 		}
-		if (ref.status === "aborted") {
-			return {
-				to: message.to,
-				outcome: "failed",
-				error: `Agent "${message.to}" was hard-aborted and cannot be messaged or revived. Its transcript remains readable at history://${message.to}.`,
-			};
-		}
 		// Advisor refs are observability-only transcripts, never messageable peers.
 		if (ref.kind === "advisor") {
 			return {
@@ -119,18 +128,19 @@ export class IrcBus {
 			};
 		}
 
-		// A `parked` recipient always needs the lifecycle to revive it — this is
-		// read from *this* bus's registry, so it holds for any registry. The
-		// mid-park / adopted checks below query the lifecycle's own state, which
-		// only describes the registry it manages: consult them only when the
-		// lifecycle owns this bus's registry, otherwise a custom-registry bus
-		// (fallen back to the global manager) would gate a live recipient on
-		// unrelated global park state. Main/non-adopted live peers skip the gate,
-		// and pending waiters still win without a session.
+		// A `parked` or killed (`aborted`) recipient always needs the lifecycle to
+		// revive it from its transcript — this is read from *this* bus's registry,
+		// so it holds for any registry. The mid-park / adopted checks below query
+		// the lifecycle's own state, which only describes the registry it manages:
+		// consult them only when the lifecycle owns this bus's registry, otherwise
+		// a custom-registry bus (fallen back to the global manager) would gate a
+		// live recipient on unrelated global park state. Main/non-adopted live
+		// peers skip the gate, and pending waiters still win without a session.
 		const lifecycle = this.#lifecycle();
 		const lifecycleOwnsRegistry = lifecycle.manages(this.#registry);
 		const needsLifecycleGate =
 			ref.status === "parked" ||
+			ref.status === "aborted" ||
 			(lifecycleOwnsRegistry && (lifecycle.isParking(message.to) || lifecycle.has(message.to)));
 
 		const priorSession = ref.session;
@@ -155,7 +165,7 @@ export class IrcBus {
 		// A pending `wait` from the recipient consumes the message directly —
 		// it is returned from their irc tool call and never hits the inbox or
 		// the session injection path.
-		const waiter = this.#takeMatchingWaiter(message.to, message.from);
+		const waiter = this.#takeMatchingWaiter(message);
 		if (waiter) {
 			waiter.resolve(message);
 			if (!opts?.suppressRelay) this.#relayToMainUi(message);
@@ -186,15 +196,15 @@ export class IrcBus {
 	}
 
 	/**
-	 * Block until a message for `agentId` (optionally from `filter.from`)
-	 * arrives; consume + return it. Null on timeout (`timeoutMs <= 0` waits
+	 * Block until a message for `agentId` that `filter` accepts arrives;
+	 * consume + return it. Null on timeout (`timeoutMs <= 0` waits
 	 * forever). Rejects when `signal` aborts. By default, already-buffered
 	 * mail satisfies the wait before parking a future waiter; callers that
 	 * need a strictly future reply can disable that drain.
 	 */
 	async wait(
 		agentId: string,
-		filter: { from?: string },
+		filter: IrcWaitFilter,
 		timeoutMs: number,
 		signal?: AbortSignal,
 		options?: { drainPending?: boolean },
@@ -205,7 +215,7 @@ export class IrcBus {
 
 		if (options?.drainPending !== false) {
 			// Already-pending mail satisfies the wait without parking a waiter.
-			const pending = this.#takeFromMailbox(agentId, filter.from);
+			const pending = this.#takeFromMailbox(agentId, msg => ircWaitAccepts(filter, msg));
 			if (pending) return pending;
 		}
 
@@ -233,7 +243,7 @@ export class IrcBus {
 		};
 
 		const waiter: IrcWaiter = {
-			from: filter.from,
+			filter,
 			resolve: msg => settle({ kind: "message", msg }),
 			cancel: () => cleanup(),
 		};
@@ -268,7 +278,7 @@ export class IrcBus {
 	 * block without draining the entire backlog.
 	 */
 	take(agentId: string, from?: string): IrcMessage | undefined {
-		return this.#takeFromMailbox(agentId, from);
+		return this.#takeFromMailbox(agentId, msg => from === undefined || msg.from === from);
 	}
 
 	/** Unread count for the local Agent Hub overlay. */
@@ -293,14 +303,14 @@ export class IrcBus {
 		}
 	}
 
-	/** Resolve the OLDEST waiter for `agentId` whose from-filter accepts `from`. */
-	#takeMatchingWaiter(agentId: string, from: string): IrcWaiter | undefined {
-		const waiters = this.#waiters.get(agentId);
+	/** Resolve the OLDEST waiter for the recipient whose filter accepts `message`. */
+	#takeMatchingWaiter(message: IrcMessage): IrcWaiter | undefined {
+		const waiters = this.#waiters.get(message.to);
 		if (!waiters) return undefined;
-		const index = waiters.findIndex(waiter => !waiter.from || waiter.from === from);
+		const index = waiters.findIndex(waiter => ircWaitAccepts(waiter.filter, message));
 		if (index === -1) return undefined;
 		const [waiter] = waiters.splice(index, 1);
-		if (waiters.length === 0) this.#waiters.delete(agentId);
+		if (waiters.length === 0) this.#waiters.delete(message.to);
 		return waiter;
 	}
 
@@ -312,11 +322,11 @@ export class IrcBus {
 		if (waiters.length === 0) this.#waiters.delete(agentId);
 	}
 
-	#takeFromMailbox(agentId: string, from?: string): IrcMessage | undefined {
+	#takeFromMailbox(agentId: string, accepts: (msg: IrcMessage) => boolean): IrcMessage | undefined {
 		const mailbox = this.#mailboxes.get(agentId);
 		if (!mailbox) return undefined;
-		const index = from ? mailbox.findIndex(msg => msg.from === from) : 0;
-		if (index === -1 || mailbox.length === 0) return undefined;
+		const index = mailbox.findIndex(accepts);
+		if (index === -1) return undefined;
 		const [message] = mailbox.splice(index, 1);
 		if (mailbox.length === 0) this.#mailboxes.delete(agentId);
 		return message;

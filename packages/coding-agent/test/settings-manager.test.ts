@@ -2506,7 +2506,7 @@ describe("Settings", () => {
 			const settings = await Settings.init({ cwd: projectDir, agentDir });
 
 			expect(cfgDevAutoqaConsent.get(settings)).toBe("granted");
-			expect(cfgDevAutoqa.get(settings)).toBe(true);
+			expect(cfgDevAutoqa.get(settings)).toBe(false);
 			expect(cfgDevAutoqa.isConfigured(settings)).toBe(false);
 			expect(cfgTodoRemindersMax.get(settings)).toBe(5);
 			expect(cfgTodoReminders.get(settings)).toBe(true);

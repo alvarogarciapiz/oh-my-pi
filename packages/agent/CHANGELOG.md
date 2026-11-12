@@ -4,12 +4,15 @@
 
 ### Added
 
-- Added `estimateAdaptiveReserveTokens()` and `CompactionSettings.adaptiveReserveTokens` for usage-based compaction reserves, `resolveToolConcurrencyMode()`, and the optional `AgentTool.outputSchema`
+- Added `estimateAdaptiveReserveTokens()` and `CompactionSettings.adaptiveReserveTokens` for usage-based compaction reserves, `resolveToolConcurrency()`, and the optional `AgentTool.outputSchema`
+- Added `ToolCallContext.earlierEffectsSettled`, which settles once the earlier non-read calls running beside a shared call have finished, so a read in the same message sees their effects (upstream N-39)
 - Added the `pinnedToolDefinitions` agent option and `getSentToolDefinitions()`, so a child agent can declare its parent's exact tool definitions and reuse the parent's prompt cache
+- Aside providers (`AgentLoopConfig.getAsideMessages`, `Agent.setAsideMessageProvider`) now receive the polled boundary (`AsideBoundary`: `"work"` after tool calls, `"stop"` at the end of a turn), so they can keep a message out of a finished turn (upstream #16583)
 
 ### Fixed
 
 - Fixed compaction persisting summaries cut off by the output-token limit: a truncated summary or handoff is retried once with a larger budget and no reasoning, then rejected so the next compaction method takes over
+- Fixed compaction discarding the completed summary when the optional short summary fails or returns no answer; compaction now completes without a short summary, and cancellation still cancels it (upstream #16942)
 
 ## [18.9.0] - 2026-10-11
 
