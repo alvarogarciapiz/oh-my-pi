@@ -36,6 +36,15 @@ const MIRRORED_STYLES = [
 	"paddingLeft",
 ] as const;
 
+/** Lay `mirror` (absolutely placed over `input`) out like the textarea, so its text wraps at the same places. */
+export function syncMirrorStyles(input: HTMLTextAreaElement, mirror: HTMLElement): void {
+	const style = getComputedStyle(input);
+	for (const property of MIRRORED_STYLES) mirror.style[property] = style[property];
+	// The textarea's scrollbar narrows its text; the mirror wraps at the same width.
+	mirror.style.width = `${input.clientWidth}px`;
+	mirror.style.height = `${input.clientHeight}px`;
+}
+
 interface Suggestion {
 	/** The draft and caret it is shown for. */
 	text: string;
@@ -168,7 +177,7 @@ export class GhostText {
 
 	#show(suggestion: Suggestion): void {
 		this.#shown = suggestion;
-		this.#syncStyles();
+		syncMirrorStyles(this.input, this.#mirror);
 		const before = suggestion.text.slice(0, suggestion.cursor);
 		const after = suggestion.text.slice(suggestion.cursor);
 		this.#mirror.replaceChildren(
@@ -185,15 +194,6 @@ export class GhostText {
 		this.#shown = undefined;
 		this.#mirror.hidden = true;
 		this.#mirror.replaceChildren();
-	}
-
-	#syncStyles(): void {
-		const style = getComputedStyle(this.input);
-		const mirror = this.#mirror.style;
-		for (const property of MIRRORED_STYLES) mirror[property] = style[property];
-		// The textarea's scrollbar narrows its text; the mirror wraps at the same width.
-		mirror.width = `${this.input.clientWidth}px`;
-		mirror.height = `${this.input.clientHeight}px`;
 	}
 }
 

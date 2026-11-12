@@ -25,6 +25,7 @@ import { openLightbox } from "./lightbox";
 import { playFarewell, preloadFarewell } from "./logo-farewell";
 import { renderMarkdown } from "./markdown";
 import { MessageEditor } from "./message-editor";
+import { splitMentions } from "./mention-token";
 import { SelectionReply } from "./selection-reply";
 import { hiddenNoticeElement, isSkillUpdateDetails, noticeElement, skillUpdateElement } from "./notices";
 import { PlanCard } from "./plan-card";
@@ -113,14 +114,19 @@ function contentImages(content: string | Array<{ type: string }>): ImageContent[
 	return typeof content === "string" ? [] : (content.filter(block => block.type === "image") as ImageContent[]);
 }
 
-/** A prompt's bubble: the excerpt it replies to, plain text (pre-wrapped), and image thumbnails. */
+/** A prompt's bubble: the excerpt it replies to, plain text (pre-wrapped) with `@path` mentions as file links, and image thumbnails. */
 function bubble(text: string, images: ImageContent[], onEdit?: () => void, quote?: string): HTMLElement {
 	const el = h("div", { className: "msg user" });
 	const body = h("div", { className: "bubble" });
 	if (quote !== undefined) {
 		body.append(h("div", { className: "bubble-quote", dataset: { tooltip: quote } }, quote));
 	}
-	if (text) body.append(h("div", { className: "bubble-text" }, text));
+	if (text) {
+		const content = h("div", { className: "bubble-text" });
+		for (const part of splitMentions(text))
+			content.append(typeof part === "string" ? part : fileLink(part.path, part.label));
+		body.append(content);
+	}
 	if (images.length > 0) {
 		body.append(h("div", { className: "thumbs" }, ...images.map(image => thumbnail(image))));
 	}

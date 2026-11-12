@@ -42,7 +42,7 @@ const saved = vscode.getState();
 const composer = new Composer(
 	post,
 	state => vscode.setState(state),
-	{ draft: saved?.draft ?? "", quote: saved?.quote },
+	{ draft: saved?.draft ?? "", quote: saved?.quote, mentions: saved?.mentions },
 	{
 		// TUI commands without an RPC handler, run by the chat itself.
 		localCommands: [
@@ -181,6 +181,7 @@ function handle(update: ChatUpdate): void {
 		case "state": {
 			const { state } = update;
 			header.setState(state, update.stats, update.title, update.noWorkspace);
+			composer.setWorkspaceEnabled(!update.noWorkspace);
 			history.setChatNoWorkspace(update.noWorkspace);
 			transcript.setChangesAvailable(!update.noWorkspace);
 			transcript.setPlace(update.noWorkspace, update.folder);
@@ -255,6 +256,9 @@ function handle(update: ChatUpdate): void {
 			break;
 		case "commands":
 			composer.setCommands(update.commands);
+			break;
+		case "mentionResults":
+			composer.mentionResults(update);
 			break;
 		case "commandOutput":
 			transcript.appendCommandOutput(update.text);

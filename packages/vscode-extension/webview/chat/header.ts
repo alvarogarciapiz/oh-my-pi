@@ -3,7 +3,8 @@
  * beside it (a spinner while omp reviews the skills the last task relied on, and
  * a button counting the skill proposals awaiting a decision, which opens them
  * with Approve / Reject), a "No workspace" badge on chats without a workspace,
- * and New chat / New chat without workspace / History / Settings icon buttons.
+ * and New chat / New chat without workspace / New chat in another tab (a menu
+ * choosing the project or no workspace) / History / Settings icon buttons.
  * History carries a blinking green badge counting the sessions that finished unseen.
  */
 import type {
@@ -72,6 +73,10 @@ export class Header {
 		),
 		this.#curationList,
 	);
+	#newTabButton: HTMLButtonElement;
+	#newTabItems: HTMLButtonElement[];
+	#newTabMenu: HTMLElement;
+	#newTabAnchor: HTMLElement;
 
 	constructor(
 		private readonly post: Post,
@@ -84,16 +89,47 @@ export class Header {
 		this.#rename = iconButton("pencil", "Rename chat", () => this.#startRename());
 		this.#rename.classList.add("title-rename");
 		this.#title.addEventListener("dblclick", () => this.#startRename());
+		this.#newTabButton = iconButton("copyPlus", "New chat in another tab", () => {
+			if (this.#newTabMenu.hidden) this.#openNewTabMenu();
+			else this.#closeNewTabMenu();
+		});
+		this.#newTabButton.ariaHasPopup = "menu";
+		this.#newTabButton.ariaExpanded = "false";
+		this.#newTabItems = [
+			this.#newTabItem("folder", "Nuevo chat en el proyecto", false),
+			this.#newTabItem("globe", "Nuevo chat sin workspace", true),
+		];
+		this.#newTabMenu = h(
+			"div",
+			{ className: "new-tab-menu", role: "menu", ariaLabel: "New chat in another tab", hidden: true },
+			...this.#newTabItems,
+		);
+		this.#newTabMenu.addEventListener("keydown", event => {
+			if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+			event.preventDefault();
+			const current = this.#newTabItems.indexOf(document.activeElement as HTMLButtonElement);
+			const step = event.key === "ArrowDown" ? 1 : -1;
+			const next = (current + step + this.#newTabItems.length) % this.#newTabItems.length;
+			this.#newTabItems[next]?.focus();
+		});
+		this.#newTabAnchor = h("div", { className: "new-tab-anchor" }, this.#newTabButton, this.#newTabMenu);
 		this.#curationDone.addEventListener("click", () => {
 			if (this.#curationPanel.hidden) this.#openCurationPanel();
 			else this.#closeCurationPanel();
 		});
 		document.addEventListener("keydown", event => {
-			if (event.key === "Escape" && !this.#curationPanel.hidden) this.#closeCurationPanel();
+			if (event.key !== "Escape") return;
+			if (!this.#curationPanel.hidden) this.#closeCurationPanel();
+			if (!this.#newTabMenu.hidden) {
+				this.#closeNewTabMenu();
+				this.#newTabButton.focus();
+			}
 		});
 		document.addEventListener("mousedown", event => {
 			const target = event.target as Node | null;
-			if (this.#curationPanel.hidden || !target) return;
+			if (!target) return;
+			if (!this.#newTabMenu.hidden && !this.#newTabAnchor.contains(target)) this.#closeNewTabMenu();
+			if (this.#curationPanel.hidden) return;
 			if (this.#curationPanel.contains(target) || this.#curationDone.contains(target)) return;
 			this.#closeCurationPanel();
 		});
@@ -125,6 +161,7 @@ export class Header {
 				iconButton("plusGlobe", "New chat without workspace (general tasks, not this project)", () =>
 					post({ type: "newSession", noWorkspace: true }),
 				),
+				this.#newTabAnchor,
 				this.#history,
 				this.#back,
 				iconButton("settings", "Settings", () => post({ type: "openSettings" })),
@@ -180,6 +217,26 @@ export class Header {
 	#closeCurationPanel(): void {
 		this.#curationPanel.hidden = true;
 		this.#curationDone.ariaExpanded = "false";
+	}
+
+	#newTabItem(iconName: "folder" | "globe", label: string, noWorkspace: boolean): HTMLButtonElement {
+		const item = h("button", { type: "button", className: "new-tab-item", role: "menuitem" }, icon(iconName), label);
+		item.addEventListener("click", () => {
+			this.#closeNewTabMenu();
+			this.post({ type: "newSessionInTab", noWorkspace });
+		});
+		return item;
+	}
+
+	#openNewTabMenu(): void {
+		this.#newTabMenu.hidden = false;
+		this.#newTabButton.ariaExpanded = "true";
+		this.#newTabItems[0]?.focus();
+	}
+
+	#closeNewTabMenu(): void {
+		this.#newTabMenu.hidden = true;
+		this.#newTabButton.ariaExpanded = "false";
 	}
 
 	/** While the history panel is open the bar reads "History" and offers Back instead of History. */

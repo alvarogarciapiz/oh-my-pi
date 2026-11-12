@@ -6,6 +6,7 @@ import { CommandOutputStore } from "./chat/command-outputs";
 import { ExamplePromptStore } from "./chat/example-prompt-store";
 import type { ChatSession } from "./chat/chat-session";
 import { ChatRegistry } from "./chat/chat-views";
+import { formatWorkspaceMention } from "./chat/workspace-mentions";
 import { agentDir, readConfig, workspaceCwd } from "./config";
 import { ChangeViewer } from "./editor-changes/change-viewer";
 import { bindNoWorkspaceState } from "./no-workspace";
@@ -413,9 +414,9 @@ export function activate(context: vscode.ExtensionContext): void {
 
 export function deactivate(): void {}
 
-/** An omp `@file` mention; paths with spaces are quoted. */
+/** An omp `@file` mention; a path no mention form can carry (both quote kinds) goes in as plain text. */
 function mention(relative: string): string {
-	return /\s/.test(relative) ? `@"${relative}"` : `@${relative}`;
+	return formatWorkspaceMention(relative) ?? relative;
 }
 
 function renderStatusBar(item: vscode.StatusBarItem, session: ChatSession | undefined): void {

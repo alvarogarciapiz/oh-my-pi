@@ -247,6 +247,18 @@ export type AgentStatus =
 	/** The process exited or could not start; `message` explains why (missing binary, crash). */
 	| { phase: "stopped"; message: string };
 
+/** A workspace file or folder offered by the composer's `@` search. */
+export interface WorkspaceMention {
+	name: string;
+	/** Shown path: relative to its workspace folder, prefixed by the folder's name when several are open. */
+	path: string;
+	kind: "file" | "folder";
+	/** The `@path` omp resolves, relative to the folder omp runs in. */
+	mention: string;
+	/** Absolute path, opened when the mention is clicked. */
+	openPath: string;
+}
+
 /** Host → chat webview. */
 export type ChatUpdate =
 	| { type: "status"; status: AgentStatus }
@@ -283,6 +295,8 @@ export type ChatUpdate =
 	| { type: "thinkingLevels"; levels: ThinkingLevel[] }
 	/** Slash commands for composer completion. */
 	| { type: "commands"; commands: AvailableSlashCommand[] }
+	/** Answer to `searchMentions`. */
+	| { type: "mentionResults"; requestId: number; entries: WorkspaceMention[]; limited: boolean; error?: string }
 	/** Text printed by a local slash command (no agent turn). */
 	| { type: "commandOutput"; text: string }
 	/** Transient banner (errors, info) shown above the composer. */
@@ -362,6 +376,8 @@ export type ChatRequest =
 	| { type: "abort" }
 	/** Start a new chat; `noWorkspace` starts one without a workspace (see no-workspace.ts). */
 	| { type: "newSession"; noWorkspace?: boolean }
+	/** Start a new chat in another editor tab (this tab's group, or the active group from the sidebar); `noWorkspace` as in `newSession`. */
+	| { type: "newSessionInTab"; noWorkspace: boolean }
 	/** List the sessions for the history panel; the host answers with `sessions`. */
 	| { type: "listSessions" }
 	/** Search every message of the history panel's sessions; the host answers with `sessionSearch`. */
@@ -375,6 +391,8 @@ export type ChatRequest =
 	| { type: "markSessionUnread"; path: string }
 	/** Pick files with the open dialog and insert them as `@path` mentions. */
 	| { type: "attachFiles" }
+	/** Search workspace files and folders for the composer's `@` popup; `fresh` rebuilds the index. */
+	| { type: "searchMentions"; requestId: number; query: string; fresh: boolean }
 	| { type: "setModel"; provider: string; modelId: string }
 	| { type: "setThinkingLevel"; level: ThinkingLevel }
 	/** Enter or leave omp's plan mode, then send `prompt` if given (`/plan <prompt>`); the host replies with a fresh `state`. */

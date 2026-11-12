@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.38.0]
+
+### Added
+
+- A new header button, "New chat in another tab", opens a menu to start a chat in the project or without a workspace in its own editor tab (in the same group as the current tab, or the active group from the sidebar); `+` and `+ sin workspace` still start the chat in place ([#1](https://github.com/javimp2003/oh-my-pi/pull/1) by [@ManoloMB](https://github.com/ManoloMB))
+- Typing `@` in the composer searches the workspace's files and folders; the chosen one shows as a short `@name` link (click to open) while its full path is sent, and `@path` mentions in your sent messages become links too ([#2](https://github.com/javimp2003/oh-my-pi/pull/2) by [@alvarorg14](https://github.com/alvarorg14))
+
+### Fixed
+
+- Clicking a mentioned folder in the chat (for example in "Attached …") reveals it in the Explorer instead of reporting it was not found ([#2](https://github.com/javimp2003/oh-my-pi/pull/2) by [@alvarorg14](https://github.com/alvarorg14))
+
 ## [0.37.0]
 
 ### Changed

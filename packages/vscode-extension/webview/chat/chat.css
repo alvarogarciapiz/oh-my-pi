@@ -434,6 +434,52 @@ code {
 	margin-left: auto;
 }
 
+/* "New chat in another tab": a menu under its button choosing the project or no workspace. */
+.new-tab-anchor {
+	position: relative;
+	display: flex;
+}
+
+.new-tab-menu {
+	position: absolute;
+	top: calc(100% + 4px);
+	right: 0;
+	z-index: 20;
+	min-width: 220px;
+	padding: 4px;
+	display: flex;
+	flex-direction: column;
+	border-radius: var(--r-sm);
+	border: 1px solid var(--c-border-heavy);
+	background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+	box-shadow: 0 4px 16px rgb(0 0 0 / 0.3);
+}
+
+.new-tab-menu[hidden] {
+	display: none;
+}
+
+.new-tab-item {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 8px;
+	border: 0;
+	border-radius: var(--r-sm);
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	text-align: left;
+	white-space: nowrap;
+	cursor: pointer;
+}
+
+.new-tab-item:hover,
+.new-tab-item:focus-visible {
+	background: var(--vscode-list-hoverBackground);
+	outline: none;
+}
+
 /* ---- Main area ---- */
 
 .main {
@@ -5550,4 +5596,36 @@ body.vscode-high-contrast-light .picker-trigger .icon.picker-gateway {
 	padding: 4px 8px;
 	color: var(--c-fg-3);
 	font-size: var(--fs-sm);
+}
+
+/* Compact `@name` mentions in the draft: a mirror over the textarea (text transparent) whose links cover the mentions' text. */
+.mention-overlay {
+	position: absolute;
+	top: 0;
+	left: 0;
+	z-index: 2;
+	overflow: hidden;
+	white-space: pre-wrap;
+	overflow-wrap: break-word;
+	color: transparent;
+	pointer-events: none;
+}
+
+.mention-overlay[hidden] {
+	display: none;
+}
+
+.draft-mention-link {
+	color: var(--vscode-textLink-foreground);
+	background: var(--vscode-input-background, var(--c-bg));
+	text-decoration: underline;
+	cursor: pointer;
+	pointer-events: auto;
+}
+
+/* File or folder icon at the start of an `@` popup row. */
+.slash-item > .icon {
+	width: 14px;
+	height: 14px;
+	color: var(--c-fg-2);
 }

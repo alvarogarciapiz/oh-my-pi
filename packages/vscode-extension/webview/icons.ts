@@ -35,6 +35,7 @@ export type IconName =
 	| "chevronUp"
 	| "bash"
 	| "plusGlobe"
+	| "copyPlus"
 	| "reply"
 	| "zap"
 	| "timer"
@@ -89,6 +90,9 @@ const PATHS: Record<IconName, string> = {
 	// A globe with a plus at its top-right corner: a new chat without a workspace.
 	plusGlobe:
 		"M18.88 12.61A8 8 0 1 1 12.39 6.12M3 14h16M11 6a12.2 12.2 0 0 1 0 16M11 6a12.2 12.2 0 0 0 0 16M19 2v6M16 5h6",
+	// Two stacked squares with a plus (Lucide "copy-plus"): a new chat in another tab.
+	copyPlus:
+		"M15 12v6M12 15h6M10 8h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2zM4 16a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2",
 	reply: "m9 17-5-5 5-5M20 18v-2a4 4 0 0 0-4-4H4",
 	zap: "M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z",
 	// A stopwatch: the scope checkpoint (how long MarIA Code has been working).

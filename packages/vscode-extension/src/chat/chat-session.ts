@@ -33,11 +33,15 @@ import {
 import type { AgentPool } from "./agent-pool";
 import type { ExamplePromptStore } from "./example-prompt-store";
 import { mentionCandidates } from "./mentioned-file";
+import { WorkspaceMentionSearch } from "./workspace-mention-search";
+import { SEARCH_EXCLUDE } from "./workspace-mentions";
 
 export interface ChatSurface {
 	readonly webview: vscode.Webview;
 	readonly visible: boolean;
 	reveal(): void;
+	/** Open a new chat (without a workspace when `noWorkspace`) in another editor tab. */
+	openInNewTab(noWorkspace: boolean): void;
 }
 
 /** Shown before the view has a process (it gets one as soon as it opens). */
@@ -56,6 +60,8 @@ export class ChatSession implements vscode.Disposable, HostView {
 	/** The session whose proposals the webview shows; `null` until first sent. */
 	#proposalsSessionFile: string | undefined | null = null;
 	readonly #disposables: vscode.Disposable[] = [];
+	/** The composer's `@` search over the workspace. */
+	readonly #mentionSearch = new WorkspaceMentionSearch();
 	readonly #onDidChange = new vscode.EventEmitter<ChatSession>();
 	/** Fires when the shown session, its process, title, model, or busy state changes. */
 	readonly onDidChange = this.#onDidChange.event;
@@ -462,6 +468,33 @@ export class ChatSession implements vscode.Disposable, HostView {
 
 	async #handle(request: ChatRequest): Promise<void> {
 		switch (request.type) {
+			case "searchMentions": {
+				const host = this.#host;
+				if (host?.noWorkspace) {
+					this.post({ type: "mentionResults", requestId: request.requestId, entries: [], limited: false });
+					return;
+				}
+				try {
+					const result = await this.#mentionSearch.search(
+						request.query,
+						request.fresh,
+						host?.process?.command.cwd ?? workspaceCwd(),
+					);
+					if (this.#host === host) this.post({ type: "mentionResults", requestId: request.requestId, ...result });
+				} catch (error) {
+					this.log.appendLine(`Workspace mention search failed: ${errorMessage(error)}`);
+					if (this.#host === host) {
+						this.post({
+							type: "mentionResults",
+							requestId: request.requestId,
+							entries: [],
+							limited: false,
+							error: "Could not search the workspace.",
+						});
+					}
+				}
+				return;
+			}
 			case "focusChanged":
 				this.#onDidChangeFocus.fire(request.focused);
 				return;
@@ -488,6 +521,9 @@ export class ChatSession implements vscode.Disposable, HostView {
 				return;
 			case "newSession":
 				await this.newSession(request.noWorkspace);
+				return;
+			case "newSessionInTab":
+				this.surface.openInNewTab(request.noWorkspace);
 				return;
 			case "listSessions":
 				await this.#postSessions();
@@ -644,21 +680,26 @@ export class ChatSession implements vscode.Disposable, HostView {
 }
 
 /**
- * Open a file the transcript mentions at an optional 1-based line; see
- * {@link resolveMentionedFile}. `noWorkspace`: the chat runs in the no-workspace folder.
+ * Open a file the transcript mentions at an optional 1-based line, or reveal a
+ * mentioned folder in the Explorer; see {@link resolveMentionedFile}.
+ * `noWorkspace`: the chat runs in the no-workspace folder.
  */
 async function openMentionedFile(
 	file: string,
 	line: number | undefined,
 	chat: { noWorkspace: boolean; sessionFile?: string },
 ): Promise<void> {
-	const uri = await resolveMentionedFile(file, chat);
-	if (!uri) {
+	const resolved = await resolveMentionedFile(file, chat);
+	if (!resolved) {
 		const where = chat.noWorkspace ? noWorkspaceFolder() : "this workspace";
 		void vscode.window.showWarningMessage(`MarIA Code: "${file}" was not found in ${where}.`);
 		return;
 	}
-	const document = await vscode.workspace.openTextDocument(uri);
+	if (resolved.directory) {
+		await vscode.commands.executeCommand("revealInExplorer", resolved.uri);
+		return;
+	}
+	const document = await vscode.workspace.openTextDocument(resolved.uri);
 	const position = line && line > 0 ? new vscode.Position(line - 1, 0) : undefined;
 	await vscode.window.showTextDocument(document, {
 		preview: true,
@@ -666,30 +707,29 @@ async function openMentionedFile(
 	});
 }
 
-/** Folders never searched for a mentioned file. */
-const SEARCH_EXCLUDE = "**/{node_modules,.git,.venv,venv,dist,build,out,target}/**";
 /** Matches listed for a mention that names several files. */
 const MAX_MATCHES = 50;
 
 /**
- * The file behind a path the agent wrote: a `local://` scratch file of the
+ * The file or folder behind a path the agent wrote: a `local://` scratch file of the
  * session, a `~`/absolute path, or a path relative to the folder the chat works
  * in (the no-workspace folder for a chat without a workspace). Agents in a
  * workspace also cite paths relative to the repository they work in (often a
  * subfolder of the open folder, such as one repo of several) or just a file name
  * (`agent.md`), so there a path missing under the workspace folders is looked up
- * anywhere in the workspace: one match opens, several ask which one, none
- * resolve to undefined.
+ * as a file anywhere in the workspace: one match opens, several ask which one,
+ * none resolve to undefined.
  */
 async function resolveMentionedFile(
 	file: string,
 	chat: { noWorkspace: boolean; sessionFile?: string },
-): Promise<vscode.Uri | undefined> {
+): Promise<{ uri: vscode.Uri; directory: boolean } | undefined> {
 	const roots = chat.noWorkspace
 		? [noWorkspaceFolder()]
 		: [workspaceCwd(), ...(vscode.workspace.workspaceFolders ?? []).map(folder => folder.uri.fsPath)];
 	for (const candidate of mentionCandidates(file, { roots, sessionFile: chat.sessionFile, home: os.homedir() })) {
-		if (await isFile(candidate)) return vscode.Uri.file(candidate);
+		const kind = await statKind(candidate);
+		if (kind) return { uri: vscode.Uri.file(candidate), directory: kind === "directory" };
 	}
 	// The workspace search does not cover the no-workspace folder, nor names that are not relative paths.
 	if (chat.noWorkspace || file.startsWith("local://") || /^~([/\\]|$)/.test(file) || path.isAbsolute(file)) {
@@ -700,7 +740,7 @@ async function resolveMentionedFile(
 	// Glob metacharacters in names (`[id].tsx`) must match literally.
 	const pattern = `**/${relative.replace(/[[\]{}()*?!]/g, char => `[${char}]`)}`;
 	const matches = await vscode.workspace.findFiles(pattern, SEARCH_EXCLUDE, MAX_MATCHES);
-	if (matches.length <= 1) return matches[0];
+	if (matches.length <= 1) return matches[0] && { uri: matches[0], directory: false };
 	const items = matches
 		.map(uri => ({ label: vscode.workspace.asRelativePath(uri, true), uri }))
 		.sort((a, b) => a.label.length - b.label.length || a.label.localeCompare(b.label));
@@ -708,13 +748,13 @@ async function resolveMentionedFile(
 		title: `MarIA Code: open ${relative}`,
 		placeHolder: `${matches.length} files match "${relative}"`,
 	});
-	return picked?.uri;
+	return picked && { uri: picked.uri, directory: false };
 }
 
-async function isFile(file: string): Promise<boolean> {
+async function statKind(file: string): Promise<"file" | "directory" | undefined> {
 	return fs.stat(file).then(
-		stats => stats.isFile(),
-		() => false,
+		stats => (stats.isFile() ? "file" : stats.isDirectory() ? "directory" : undefined),
+		() => undefined,
 	);
 }
 
