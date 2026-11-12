@@ -219,6 +219,39 @@
 				"clientOmit": []
 			},
 			{
+				"name": "get_skills",
+				"doc": "List the session's skills, switched-off ones included, and whether they can still be switched off.",
+				"params": null,
+				"result": "SessionSkills",
+				"nullable": false,
+				"unwrap": null,
+				"timeoutMs": null,
+				"completion": null,
+				"clientOmit": []
+			},
+			{
+				"name": "set_disabled_skills",
+				"doc": "Switch the named skills off for this session only (an empty list turns every skill back on); recorded in the session so a resume keeps them off. Fails with `skills_locked` once the session has its first message. Returns the resulting skills.",
+				"params": "SetDisabledSkillsParams",
+				"result": "SessionSkills",
+				"nullable": false,
+				"unwrap": null,
+				"timeoutMs": null,
+				"completion": null,
+				"clientOmit": []
+			},
+			{
+				"name": "reload_skills",
+				"doc": "Rediscover skills and file slash commands from disk (e.g. after a skill was added), rebuild the system prompt, and return the resulting skills.",
+				"params": null,
+				"result": "SessionSkills",
+				"nullable": false,
+				"unwrap": null,
+				"timeoutMs": null,
+				"completion": null,
+				"clientOmit": []
+			},
+			{
 				"name": "get_entries",
 				"doc": "Read the append-history; with `since`, only entries strictly after that durable entry id.",
 				"params": "GetEntriesParams",
@@ -3588,6 +3621,59 @@
 			],
 			"description": "One background job of the session."
 		},
+		"SessionSkill": {
+			"type": "object",
+			"properties": {
+				"name": {
+					"type": "string",
+					"description": "Name the skill is invoked by (`/skill:<name>`, `skill://<name>`)."
+				},
+				"description": {
+					"type": "string"
+				},
+				"source": {
+					"type": "string",
+					"description": "Where it was discovered, as `<provider>:<level>` (e.g. `native:user`, `claude:project`)."
+				},
+				"filePath": {
+					"type": "string",
+					"description": "Path of its `SKILL.md`."
+				},
+				"enabled": {
+					"type": "boolean",
+					"description": "False when the session switched it off."
+				}
+			},
+			"required": [
+				"name",
+				"description",
+				"source",
+				"filePath",
+				"enabled"
+			],
+			"description": "One skill discovered for the session."
+		},
+		"SessionSkills": {
+			"type": "object",
+			"properties": {
+				"skills": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/SessionSkill"
+					},
+					"description": "Every discovered skill, switched-off ones included, in discovery order."
+				},
+				"editable": {
+					"type": "boolean",
+					"description": "Whether `set_disabled_skills` is accepted: true until the session has its first message."
+				}
+			},
+			"required": [
+				"skills",
+				"editable"
+			],
+			"description": "The session's skills and whether they can still be switched off."
+		},
 		"BtwStatus": {
 			"enum": [
 				"running",
@@ -6461,6 +6547,20 @@
 			},
 			"required": [
 				"commands"
+			]
+		},
+		"SetDisabledSkillsParams": {
+			"type": "object",
+			"properties": {
+				"names": {
+					"type": "array",
+					"items": {
+						"type": "string"
+					}
+				}
+			},
+			"required": [
+				"names"
 			]
 		},
 		"GetEntriesParams": {

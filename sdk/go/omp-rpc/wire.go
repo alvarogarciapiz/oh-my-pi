@@ -3410,6 +3410,62 @@ func (v *AsyncJob) decodeFrom(raw map[string]json.RawMessage) error {
 	return nil
 }
 
+// One skill discovered for the session.
+type SessionSkill struct {
+	// Name the skill is invoked by (`/skill:<name>`, `skill://<name>`).
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	// Where it was discovered, as `<provider>:<level>` (e.g. `native:user`, `claude:project`).
+	Source string `json:"source"`
+	// Path of its `SKILL.md`.
+	FilePath string `json:"filePath"`
+	// False when the session switched it off.
+	Enabled bool `json:"enabled"`
+}
+
+func (v *SessionSkill) UnmarshalJSON(data []byte) error {
+	return decodeWith(data, "SessionSkill", v.decodeFrom)
+}
+
+func (v *SessionSkill) decodeFrom(raw map[string]json.RawMessage) error {
+	var out SessionSkill
+	d := fieldDecoder{raw: raw, owner: "SessionSkill"}
+	d.required("name", &out.Name)
+	d.required("description", &out.Description)
+	d.required("source", &out.Source)
+	d.required("filePath", &out.FilePath)
+	d.required("enabled", &out.Enabled)
+	if d.err != nil {
+		return d.err
+	}
+	*v = out
+	return nil
+}
+
+// The session's skills and whether they can still be switched off.
+type SessionSkills struct {
+	// Every discovered skill, switched-off ones included, in discovery order.
+	Skills []SessionSkill `json:"skills"`
+	// Whether `set_disabled_skills` is accepted: true until the session has its first message.
+	Editable bool `json:"editable"`
+}
+
+func (v *SessionSkills) UnmarshalJSON(data []byte) error {
+	return decodeWith(data, "SessionSkills", v.decodeFrom)
+}
+
+func (v *SessionSkills) decodeFrom(raw map[string]json.RawMessage) error {
+	var out SessionSkills
+	d := fieldDecoder{raw: raw, owner: "SessionSkills"}
+	d.required("skills", &out.Skills)
+	d.required("editable", &out.Editable)
+	if d.err != nil {
+		return d.err
+	}
+	*v = out
+	return nil
+}
+
 // Side-question turn lifecycle; `interrupted` marks a turn whose process died while it ran.
 type BtwStatus string
 
@@ -8062,6 +8118,32 @@ func (c Commands) GetAvailableCommands(ctx context.Context) ([]AvailableSlashCom
 	var out GetAvailableCommandsResult
 	err := c.call(ctx, "get_available_commands", nil, 0, &out)
 	return out.Commands, err
+}
+
+// GetSkills sends "get_skills": List the session's skills, switched-off ones included, and whether they can still be switched off.
+func (c Commands) GetSkills(ctx context.Context) (SessionSkills, error) {
+	var out SessionSkills
+	err := c.call(ctx, "get_skills", nil, 0, &out)
+	return out, err
+}
+
+// SetDisabledSkillsCommand holds the parameters of "set_disabled_skills".
+type SetDisabledSkillsCommand struct {
+	Names []string `json:"names"`
+}
+
+// SetDisabledSkills sends "set_disabled_skills": Switch the named skills off for this session only (an empty list turns every skill back on); recorded in the session so a resume keeps them off. Fails with `skills_locked` once the session has its first message. Returns the resulting skills.
+func (c Commands) SetDisabledSkills(ctx context.Context, p SetDisabledSkillsCommand) (SessionSkills, error) {
+	var out SessionSkills
+	err := c.call(ctx, "set_disabled_skills", p, 0, &out)
+	return out, err
+}
+
+// ReloadSkills sends "reload_skills": Rediscover skills and file slash commands from disk (e.g. after a skill was added), rebuild the system prompt, and return the resulting skills.
+func (c Commands) ReloadSkills(ctx context.Context) (SessionSkills, error) {
+	var out SessionSkills
+	err := c.call(ctx, "reload_skills", nil, 0, &out)
+	return out, err
 }
 
 // GetEntriesCommand holds the parameters of "get_entries".

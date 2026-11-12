@@ -71,6 +71,9 @@ export type RpcCommand =
 	| { id?: string; type: "cancel_async_job"; jobId: string }
 	| { id?: string; type: "set_ask_dialog"; enabled: boolean }
 	| { id?: string; type: "get_available_commands" }
+	| { id?: string; type: "get_skills" }
+	| { id?: string; type: "set_disabled_skills"; names: string[] }
+	| { id?: string; type: "reload_skills" }
 	| { id?: string; type: "get_entries"; since?: string }
 	| { id?: string; type: "get_tree" }
 	| { id?: string; type: "set_todos"; phases: TodoPhase[] }
@@ -416,6 +419,24 @@ export interface RpcAsyncJob {
 	output?: string;
 }
 
+/** One skill discovered for the session (`get_skills`). */
+export interface RpcSessionSkill {
+	name: string;
+	description: string;
+	/** Where it was discovered, as `<provider>:<level>`. */
+	source: string;
+	/** Path of its `SKILL.md`. */
+	filePath: string;
+	/** False when the session switched it off. */
+	enabled: boolean;
+}
+
+/** The session's skills and whether `set_disabled_skills` is still accepted. */
+export interface RpcSessionSkills {
+	skills: RpcSessionSkill[];
+	editable: boolean;
+}
+
 // ============================================================================
 // RPC Responses (stdout)
 // ============================================================================
@@ -499,6 +520,9 @@ export type RpcResponse =
 			success: true;
 			data: { commands: RpcAvailableSlashCommand[] };
 	  }
+	| { id?: string; type: "response"; command: "get_skills"; success: true; data: RpcSessionSkills }
+	| { id?: string; type: "response"; command: "set_disabled_skills"; success: true; data: RpcSessionSkills }
+	| { id?: string; type: "response"; command: "reload_skills"; success: true; data: RpcSessionSkills }
 	| {
 			id?: string;
 			type: "response";

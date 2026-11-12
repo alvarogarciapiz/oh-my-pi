@@ -131,6 +131,22 @@ export const rpcCommands: readonly RpcCommandSpec[] = [
 		unwrap: "commands",
 	},
 	{
+		name: "get_skills",
+		doc: "List the session's skills, switched-off ones included, and whether they can still be switched off.",
+		result: "SessionSkills",
+	},
+	{
+		name: "set_disabled_skills",
+		doc: "Switch the named skills off for this session only (an empty list turns every skill back on); recorded in the session so a resume keeps them off. Fails with `skills_locked` once the session has its first message. Returns the resulting skills.",
+		params: { names: "string[]" },
+		result: "SessionSkills",
+	},
+	{
+		name: "reload_skills",
+		doc: "Rediscover skills and file slash commands from disk (e.g. after a skill was added), rebuild the system prompt, and return the resulting skills.",
+		result: "SessionSkills",
+	},
+	{
 		name: "get_entries",
 		doc: "Read the append-history; with `since`, only entries strictly after that durable entry id.",
 		params: { "since?": "string" },

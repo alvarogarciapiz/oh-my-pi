@@ -150,6 +150,9 @@ Important edge behavior from runtime:
 - `{ id?, type: "set_plan_mode", enabled: boolean }`
 - `{ id?, type: "set_ask_dialog", enabled: boolean }`
 - `{ id?, type: "get_available_commands" }`
+- `{ id?, type: "get_skills" }`
+- `{ id?, type: "set_disabled_skills", names: string[] }`
+- `{ id?, type: "reload_skills" }`
 - `{ id?, type: "get_entries", since?: string }`
 - `{ id?, type: "get_tree" }`
 - `{ id?, type: "set_todos", phases: TodoPhase[] }`
@@ -992,6 +995,25 @@ Command discovery is intentionally an OMP dialect: Pi's `get_commands` (a
 `RpcSlashCommand[]` projection over extensions → prompt templates → skills) is
 not served because OMP's richer catalog (builtins/custom/MCP/file commands,
 broader `source` enum, no Pi `sourceInfo`) is not wire-compatible with it.
+
+### Session skills
+
+`get_skills`, `set_disabled_skills` and `reload_skills` return
+`{ skills, editable }`: every discovered skill (`name`, `description`,
+`source` as `<provider>:<level>`, `filePath`, `enabled`) and whether the
+session's skills can still be switched off.
+
+`set_disabled_skills` switches the named skills off for this session only (an
+empty list turns every skill back on): they leave the system prompt, the
+`/skill:` commands and `skill://` resolution, and subagents of the session drop
+them too. It is accepted only while the session has no message (`editable`);
+afterwards it fails with code `skills_locked`, because the model has already
+seen the prompt that lists them. The choice is recorded in the session (a
+`session_disabled_skills` custom entry), so resuming or switching to the
+session restores it; `new_session` starts with every skill on.
+
+`reload_skills` rediscovers skills and file slash commands from disk (for
+example after a skill folder was added) and rebuilds the system prompt.
 
 ### Pi-compatible history/tree commands with OMP-native entry payloads
 

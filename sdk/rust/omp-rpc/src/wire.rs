@@ -3531,6 +3531,30 @@ pub struct AsyncJob {
 	pub output: Option<String>,
 }
 
+/// One skill discovered for the session.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SessionSkill {
+	/// Name the skill is invoked by (`/skill:<name>`, `skill://<name>`).
+	pub name: String,
+	pub description: String,
+	/// Where it was discovered, as `<provider>:<level>` (e.g. `native:user`, `claude:project`).
+	pub source: String,
+	/// Path of its `SKILL.md`.
+	#[serde(rename = "filePath")]
+	pub file_path: String,
+	/// False when the session switched it off.
+	pub enabled: bool,
+}
+
+/// The session's skills and whether they can still be switched off.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SessionSkills {
+	/// Every discovered skill, switched-off ones included, in discovery order.
+	pub skills: Vec<SessionSkill>,
+	/// Whether `set_disabled_skills` is accepted: true until the session has its first message.
+	pub editable: bool,
+}
+
 /// Side-question turn lifecycle; `interrupted` marks a turn whose process died while it ran.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum BtwStatus {
@@ -5366,6 +5390,11 @@ pub struct GetAvailableCommandsResult {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SetDisabledSkillsParams {
+	pub names: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GetEntriesParams {
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub since: Option<String>,
@@ -6515,6 +6544,50 @@ impl Command for GetAvailableCommandsCommand {
 
 	fn decode(data: Option<Value>) -> Result<Self::Output, serde_json::Error> {
 		serde_json::from_value::<GetAvailableCommandsResult>(data.unwrap_or_else(|| Value::Object(Map::new()))).map(|result| result.commands)
+	}
+}
+
+/// List the session's skills, switched-off ones included, and whether they can still be switched off.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct GetSkillsCommand {}
+
+impl Command for GetSkillsCommand {
+	const NAME: &'static str = "get_skills";
+	const TIMEOUT_MS: Option<u64> = None;
+	type Output = SessionSkills;
+
+	fn decode(data: Option<Value>) -> Result<Self::Output, serde_json::Error> {
+		serde_json::from_value::<SessionSkills>(data.unwrap_or_else(|| Value::Object(Map::new())))
+	}
+}
+
+/// Switch the named skills off for this session only (an empty list turns every skill back on); recorded in the session so a resume keeps them off. Fails with `skills_locked` once the session has its first message. Returns the resulting skills.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SetDisabledSkillsCommand {
+	pub names: Vec<String>,
+}
+
+impl Command for SetDisabledSkillsCommand {
+	const NAME: &'static str = "set_disabled_skills";
+	const TIMEOUT_MS: Option<u64> = None;
+	type Output = SessionSkills;
+
+	fn decode(data: Option<Value>) -> Result<Self::Output, serde_json::Error> {
+		serde_json::from_value::<SessionSkills>(data.unwrap_or_else(|| Value::Object(Map::new())))
+	}
+}
+
+/// Rediscover skills and file slash commands from disk (e.g. after a skill was added), rebuild the system prompt, and return the resulting skills.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct ReloadSkillsCommand {}
+
+impl Command for ReloadSkillsCommand {
+	const NAME: &'static str = "reload_skills";
+	const TIMEOUT_MS: Option<u64> = None;
+	type Output = SessionSkills;
+
+	fn decode(data: Option<Value>) -> Result<Self::Output, serde_json::Error> {
+		serde_json::from_value::<SessionSkills>(data.unwrap_or_else(|| Value::Object(Map::new())))
 	}
 }
 

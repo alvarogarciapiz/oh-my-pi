@@ -55,6 +55,8 @@ import type {
 	RpcSubagentProgressFrame,
 	RpcSubagentSnapshot,
 	RpcAsyncJob,
+	RpcSessionSkill,
+	RpcSessionSkills,
 } from "@oh-my-pi/pi-coding-agent/modes/rpc/rpc-types";
 import type * as Wire from "@oh-my-pi/pi-coding-agent/modes/rpc/wire/rpc-wire.generated";
 import type { RestoredQueuedMessage } from "@oh-my-pi/pi-coding-agent/session/agent-session-types";
@@ -275,6 +277,8 @@ export type State = Assert<
 		asyncJob: Outbound<RpcAsyncJob, Wire.AsyncJob>;
 		asyncJobStatuses: Same<RpcAsyncJob["status"], Wire.AsyncJobStatus>;
 		asyncJobTypes: Same<RpcAsyncJob["type"], Wire.AsyncJobType>;
+		sessionSkills: Outbound<RpcSessionSkills, Wire.SessionSkills>;
+		sessionSkill: Outbound<RpcSessionSkill, Wire.SessionSkill>;
 		btwHistoryRecord: Outbound<BtwHistoryRecord, Wire.BtwHistoryRecord>;
 		btwHistoryTurn: Outbound<BtwHistoryTurn, Wire.BtwHistoryTurn>;
 		logoutAccount: Outbound<LogoutAccount, Wire.LogoutAccount>;

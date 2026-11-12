@@ -231,8 +231,10 @@ export interface AgentSessionConfig {
 	getEvalPreludes?: () => readonly EvalPreludeDefinition[];
 	/** Tool bridge context used by user-initiated Python cells to project enabled eval preludes. */
 	evalToolSession?: ToolSession;
-	/** Loaded skills already discovered by the SDK. */
+	/** Loaded skills already discovered by the SDK, including the ones this session switched off. */
 	skills?: Skill[];
+	/** Names of the skills this session switched off for itself (its `session_disabled_skills` record). */
+	sessionDisabledSkills?: readonly string[];
 	/** Frozen routing hints shared with the system prompt and later skillful notices. */
 	skillDescriptions?: SkillDescriptionCatalog;
 	/** Skill loading warnings already captured by the SDK. */

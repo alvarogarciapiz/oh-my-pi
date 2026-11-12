@@ -92,6 +92,7 @@ import { RpcSubagentRegistry, readRpcSubagentTranscript, resolveOwnedLiveSubagen
 import type {
 	RpcAbortAndRestoreQueueResult,
 	RpcAsyncJob,
+	RpcSessionSkills,
 	RpcCommand,
 	RpcExtensionUIRequest,
 	RpcExtensionUIResponse,
@@ -941,6 +942,23 @@ export function handleRpcGetAsyncJobs(
 				output && output.length > RPC_ASYNC_JOB_OUTPUT_CHARS ? output.slice(-RPC_ASYNC_JOB_OUTPUT_CHARS) : output,
 		};
 	});
+}
+
+/** Handle RPC `get_skills`: every discovered skill, marked off when the session switched it off. */
+export function handleRpcGetSkills(
+	session: Pick<AgentSession, "discoveredSkills" | "sessionDisabledSkills" | "skillsEditable">,
+): RpcSessionSkills {
+	const disabled = session.sessionDisabledSkills;
+	return {
+		skills: session.discoveredSkills.map(skill => ({
+			name: skill.name,
+			description: skill.description,
+			source: skill.source,
+			filePath: skill.filePath,
+			enabled: !disabled.has(skill.name),
+		})),
+		editable: session.skillsEditable,
+	};
 }
 
 export async function handleRpcSessionChange(
@@ -2241,6 +2259,31 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 
 			case "get_available_commands": {
 				return success(id, "get_available_commands", { commands: await getAvailableCommands() });
+			}
+
+			case "get_skills": {
+				return success(id, "get_skills", handleRpcGetSkills(session));
+			}
+
+			case "set_disabled_skills": {
+				if (!Array.isArray(command.names) || command.names.some(name => typeof name !== "string")) {
+					return error(id, "set_disabled_skills", "set_disabled_skills requires string[] names");
+				}
+				if (!session.skillsEditable) {
+					return error(
+						id,
+						"set_disabled_skills",
+						"Skills can only be switched off before the first prompt of the session.",
+						"skills_locked",
+					);
+				}
+				await session.setSessionDisabledSkills(command.names);
+				return success(id, "set_disabled_skills", handleRpcGetSkills(session));
+			}
+
+			case "reload_skills": {
+				await session.refreshSkillsAndCommands();
+				return success(id, "reload_skills", handleRpcGetSkills(session));
 			}
 
 			case "get_entries": {

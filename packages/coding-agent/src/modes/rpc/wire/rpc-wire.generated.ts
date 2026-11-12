@@ -774,6 +774,27 @@ export interface AsyncJob {
 	output?: string;
 }
 
+/** One skill discovered for the session. */
+export interface SessionSkill {
+	/** Name the skill is invoked by (`/skill:<name>`, `skill://<name>`). */
+	name: string;
+	description: string;
+	/** Where it was discovered, as `<provider>:<level>` (e.g. `native:user`, `claude:project`). */
+	source: string;
+	/** Path of its `SKILL.md`. */
+	filePath: string;
+	/** False when the session switched it off. */
+	enabled: boolean;
+}
+
+/** The session's skills and whether they can still be switched off. */
+export interface SessionSkills {
+	/** Every discovered skill, switched-off ones included, in discovery order. */
+	skills: SessionSkill[];
+	/** Whether `set_disabled_skills` is accepted: true until the session has its first message. */
+	editable: boolean;
+}
+
 /** Side-question turn lifecycle; `interrupted` marks a turn whose process died while it ran. */
 export type BtwStatus = "running" | "complete" | "cancelled" | "error" | "interrupted";
 
@@ -1647,6 +1668,10 @@ export interface GetAvailableCommandsResult {
 	commands: AvailableSlashCommand[];
 }
 
+export interface SetDisabledSkillsParams {
+	names: string[];
+}
+
 export interface GetEntriesParams {
 	since?: string;
 }
@@ -1962,6 +1987,9 @@ export interface RpcWireCommands {
 	set_delegate_mode: { params: SetDelegateModeParams; result: SetDelegateModeResult };
 	set_ask_dialog: { params: SetAskDialogParams; result: SetAskDialogResult };
 	get_available_commands: { params: undefined; result: GetAvailableCommandsResult };
+	get_skills: { params: undefined; result: SessionSkills };
+	set_disabled_skills: { params: SetDisabledSkillsParams; result: SessionSkills };
+	reload_skills: { params: undefined; result: SessionSkills };
 	get_entries: { params: GetEntriesParams; result: SessionEntries };
 	get_tree: { params: undefined; result: SessionTree };
 	set_todos: { params: SetTodosParams; result: SetTodosResult };

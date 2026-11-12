@@ -974,6 +974,29 @@ class AsyncJob:
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
+class SessionSkill:
+    """One skill discovered for the session."""
+    name: str
+    """Name the skill is invoked by (`/skill:<name>`, `skill://<name>`)."""
+    description: str
+    source: str
+    """Where it was discovered, as `<provider>:<level>` (e.g. `native:user`, `claude:project`)."""
+    file_path: str
+    """Path of its `SKILL.md`."""
+    enabled: bool
+    """False when the session switched it off."""
+
+
+@dataclass(slots=True, frozen=True, kw_only=True)
+class SessionSkills:
+    """The session's skills and whether they can still be switched off."""
+    skills: tuple[SessionSkill, ...]
+    """Every discovered skill, switched-off ones included, in discovery order."""
+    editable: bool
+    """Whether `set_disabled_skills` is accepted: true until the session has its first message."""
+
+
+@dataclass(slots=True, frozen=True, kw_only=True)
 class BtwHistoryTurn:
     """One question and its answer within a side-question topic."""
     question: str
@@ -2378,6 +2401,25 @@ def parse_async_job(value: object, path: str = "AsyncJob") -> AsyncJob:
     )
 
 
+def parse_session_skill(value: object, path: str = "SessionSkill") -> SessionSkill:
+    payload = expect_object(value, path)
+    return SessionSkill(
+        name=required(payload, "name", decode_str, path),
+        description=required(payload, "description", decode_str, path),
+        source=required(payload, "source", decode_str, path),
+        file_path=required(payload, "filePath", decode_str, path),
+        enabled=required(payload, "enabled", decode_bool, path),
+    )
+
+
+def parse_session_skills(value: object, path: str = "SessionSkills") -> SessionSkills:
+    payload = expect_object(value, path)
+    return SessionSkills(
+        skills=required(payload, "skills", array(parse_session_skill), path),
+        editable=required(payload, "editable", decode_bool, path),
+    )
+
+
 def parse_btw_history_turn(value: object, path: str = "BtwHistoryTurn") -> BtwHistoryTurn:
     payload = expect_object(value, path)
     return BtwHistoryTurn(
@@ -3464,6 +3506,22 @@ class WireClient:
         params: dict[str, object] = {}
         return required(expect_object(self._command("get_available_commands", params), "get_available_commands"), "commands", array(parse_available_slash_command), "get_available_commands")
 
+    def get_skills(self) -> SessionSkills:
+        """List the session's skills, switched-off ones included, and whether they can still be switched off."""
+        params: dict[str, object] = {}
+        return parse_session_skills(self._command("get_skills", params), "get_skills")
+
+    def set_disabled_skills(self, names: Sequence[str]) -> SessionSkills:
+        """Switch the named skills off for this session only (an empty list turns every skill back on); recorded in the session so a resume keeps them off. Fails with `skills_locked` once the session has its first message. Returns the resulting skills."""
+        params: dict[str, object] = {}
+        params["names"] = list(names)
+        return parse_session_skills(self._command("set_disabled_skills", params), "set_disabled_skills")
+
+    def reload_skills(self) -> SessionSkills:
+        """Rediscover skills and file slash commands from disk (e.g. after a skill was added), rebuild the system prompt, and return the resulting skills."""
+        params: dict[str, object] = {}
+        return parse_session_skills(self._command("reload_skills", params), "reload_skills")
+
     def get_entries(self, since: str | None = None) -> SessionEntries:
         """Read the append-history; with `since`, only entries strictly after that durable entry id."""
         params: dict[str, object] = {}
@@ -4168,6 +4226,8 @@ __all__ = [
     "SessionEntries",
     "SessionInfoUpdateEvent",
     "SessionSettledEvent",
+    "SessionSkill",
+    "SessionSkills",
     "SessionState",
     "SessionStats",
     "SessionTree",
@@ -4348,6 +4408,8 @@ __all__ = [
     "parse_session_entries",
     "parse_session_info_update_event",
     "parse_session_settled_event",
+    "parse_session_skill",
+    "parse_session_skills",
     "parse_session_state",
     "parse_session_stats",
     "parse_session_tree",
