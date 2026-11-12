@@ -76,6 +76,47 @@ Compaction/context maintenance can run in six ways:
 5. **Mid-turn threshold maintenance**: before the next provider request when a tool-loop turn crosses the threshold and `compaction.midTurnEnabled !== false`. Subagent sessions always run this check: `createSubagentSettings` pins `compaction.midTurnEnabled` on for the child because a whole assignment is one turn, so post-turn maintenance would only fire after the run already ended.
 6. **Idle maintenance**: `runIdleCompaction()` can invoke the same auto-maintenance path with reason `"idle"`.
 
+### Prefix caching with open-model servers
+
+Coding sessions include a brief repository map in the initial `<workspace>` system-prompt snapshot, alongside detected manifests and verification commands. It uses the existing ignore-aware workspace walker, includes at most two directory levels, and caps the map at 32 lines and 2,400 characters. Each root entry gets one line with a sample of its children, so a large subtree cannot crowd out later packages. No model request is needed. Names are ordered independently of modification times, and file contents are not included. The snapshot stays fixed for the conversation, including compaction and prompt rebuilds; new conversations take a fresh snapshot. Later file observations supersede the initial map. `codingGuidance: false` omits it; `includeWorkspaceTree` still controls the separate detailed tree. This preserves the map's eligible prefix, not a guarantee that the backend keeps its KV blocks resident.
+
+There are two separate cache boundaries:
+
+- **Generating the summary:** handoff sends the live system prompt, normalized tools and transformed conversation, followed by a summary instruction. Automatic handoff and manual `/compact` using the handoff method preserve the live system prompt, including extension overrides. The request shares the live `promptCacheKey` but uses a separate provider `sessionId`, so background generation does not interleave with the active transport session.
+- **Continuing after compaction:** the summary replaces the start of the history. Ordinary causal KV caches can reuse tokens only up to the first changed token; retained messages after the new summary must be prefilled again, even when their own text is unchanged. Keeping the system prompt and tools stable preserves that earlier prefix; it cannot preserve the discarded conversation's KV state.
+
+Manual `/compact` walks the configured method order, including `handoff`. `/compact soft` explicitly selects the independent summarizer, which serializes history into text under a separate system prompt and therefore cannot reuse the live conversation prefix. Soft compaction remains useful for smaller compaction models and for windowed fallback after the original input no longer fits. `shake` remains an automatic method or a separate `/shake` command.
+
+For a text-only open model served through a private gateway, a configuration that prefers cache reuse is:
+
+```yaml
+provider:
+  appendOnlyContext: on
+compaction:
+  methodOrder: [handoff, soft]
+```
+
+`appendOnlyContext: auto` already enables stable prefixes for recognized local providers and local/private IP endpoints. A gateway with a corporate DNS name may need `on`. The sample order deliberately selects handoff before soft; retain `remote` or `snapcompact` earlier when those methods are wanted. Explicit `/handoff` keeps its base-system-prompt semantics, so a transient extension override can prevent cache reuse for that command.
+
+The server must also have prefix caching enabled and route requests to a replica that still holds the prefix. A shared `promptCacheKey` is a routing hint where supported, not a guarantee that a gateway honors it or that cached blocks have survived eviction. For vLLM, avoid `--exclude-tools-when-tool-choice-none` when relying on handoff prefix reuse: handoff disables tool calls but keeps tool definitions to match the live prompt.
+
+Validate on the actual backend with a long, warmed conversation: compare handoff generation and the first turn after compaction separately. Existing OTEL spans tagged `omp.gen_ai.oneshot.kind = handoff` expose `gen_ai.usage.input_tokens` and `gen_ai.usage.cache_read.input_tokens` when the provider reports them. Compare cached input, request latency and backend prefill metrics against the same workload before the change; missing usage counters do not prove a cache miss. CPU timings in the harness alone cannot establish GPU cache hits.
+
+Server references: [vLLM automatic prefix caching](https://docs.vllm.ai/en/latest/features/automatic_prefix_caching/), [vLLM tool-choice behavior](https://docs.vllm.ai/en/latest/features/tool_calling/).
+
+#### LiteLLM session affinity
+
+The harness sends the stable cache key as `x-litellm-session-id` on its OpenAI-compatible LiteLLM route, including discovered custom LiteLLM providers. Transport session IDs remain separate. An explicit configured header takes precedence; avoid a fixed header shared by unrelated conversations. LiteLLM also uses this value to group session logs.
+
+For multiple deployments in one LiteLLM model group, enable its deployment session affinity (merge this check with any existing checks):
+
+```yaml
+router_settings:
+  optional_pre_call_checks: [session_affinity]
+```
+
+If an `api_base` points to a Kubernetes service balancing several vLLM pods, deployment affinity alone does not select the pod. On LiteLLM versions supporting it, use a headless service with `litellm_params.kubernetes_pod_discovery: true`. Multiple LiteLLM replicas need shared Redis for deployment pins. A single vLLM replica does not need pod discovery. See [LiteLLM affinity](https://docs.litellm.ai/docs/routing#session-affinity-sticky-sessions) and [pod routing](https://docs.litellm.ai/docs/proxy/cache_aware_routing).
+
 ### Compaction shape (visual)
 
 ```text

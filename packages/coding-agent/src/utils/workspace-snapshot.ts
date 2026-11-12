@@ -1,13 +1,14 @@
 /**
  * Session-start snapshot of the code workspace for the coding system prompt:
  * git branch/status/recent commits plus project facts (manifests, package
- * managers, verify commands) detected from the project root.
+ * managers, verify commands and a brief layout) detected from the project root.
  */
 import * as os from "node:os";
 import * as path from "node:path";
 import type { VcsRepo, VcsStatusSummary } from "@oh-my-pi/pi-natives";
 import * as vcs from "@oh-my-pi/pi-natives/vcs";
 import { logger } from "@oh-my-pi/pi-utils";
+import { buildWorkspaceTree } from "../workspace-tree";
 
 export interface WorkspaceSnapshot {
 	root: string;
@@ -22,6 +23,9 @@ export interface WorkspaceSnapshot {
 	packageManagers: string[];
 	/** Detected build/test/lint commands, in detection order. */
 	verifyCommands: string[];
+	/** Brief initial layout, frozen with the rest of the session's system prompt. */
+	repositoryMap?: string;
+	repositoryMapTruncated?: boolean;
 }
 
 const PROJECT_MARKERS = [
@@ -64,6 +68,7 @@ const MAX_MARKER_DEPTH = 6;
 const MAX_MANIFESTS = 6;
 const MAX_VERIFY_COMMANDS = 8;
 const GIT_TIMEOUT_MS = 2500;
+const MAP_TIMEOUT_MS = 2500;
 
 async function readText(file: string): Promise<string> {
 	try {
@@ -160,7 +165,17 @@ export async function resolveWorkspaceSnapshot(cwd: string): Promise<WorkspaceSn
 		const root = repo?.root() ?? (await findMarkerRoot(cwd));
 		if (!root) return null;
 
-		const snapshot: WorkspaceSnapshot = { root, commits: [], ...(await detectProjectFacts(root)) };
+		const [facts, tree] = await Promise.all([
+			detectProjectFacts(root),
+			buildWorkspaceTree(root, { compact: true, timeoutMs: MAP_TIMEOUT_MS }),
+		]);
+		const snapshot: WorkspaceSnapshot = {
+			root,
+			commits: [],
+			...facts,
+			repositoryMap: tree.rendered,
+			repositoryMapTruncated: tree.truncated,
+		};
 		if (repo) {
 			const [branch, summary, commits] = await Promise.all([
 				repo.label(AbortSignal.timeout(GIT_TIMEOUT_MS)).catch(() => undefined),

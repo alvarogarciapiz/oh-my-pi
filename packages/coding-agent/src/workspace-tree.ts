@@ -9,6 +9,8 @@ const WORKSPACE_DEFAULTS = {
 	lineCap: 120,
 } as const;
 
+const WORKSPACE_MAP_LIMITS = { maxDepth: 2, perDirLimit: 6, rootLimit: 12, lineCap: 32, maxChars: 2400 } as const;
+
 /**
  * Hard cap on AGENTS.md files surfaced by `buildWorkspaceTree`. Mirrors the
  * native cap so the system-prompt builder does not need a second pass.
@@ -41,6 +43,8 @@ export interface BuildDirectoryTreeOptions {
 export interface BuildWorkspaceTreeOptions {
 	/** Abort the native workspace scan after this many milliseconds. */
 	timeoutMs?: number;
+	/** Brief, name-sorted layout without volatile file metadata for the session-start snapshot. */
+	compact?: boolean;
 }
 
 /**
@@ -91,26 +95,42 @@ export async function buildDirectoryTree(cwd: string, options: BuildDirectoryTre
  */
 export async function buildWorkspaceTree(cwd: string, options: BuildWorkspaceTreeOptions = {}): Promise<WorkspaceTree> {
 	const rootPath = path.resolve(cwd);
+	const limits = options.compact ? WORKSPACE_MAP_LIMITS : WORKSPACE_DEFAULTS;
 	try {
 		const result = await listWorkspace({
 			path: rootPath,
-			maxDepth: WORKSPACE_DEFAULTS.maxDepth,
+			maxDepth: limits.maxDepth,
 			hidden: false,
 			gitignore: true,
-			collectAgentsMd: true,
+			collectAgentsMd: !options.compact,
 			timeoutMs: options.timeoutMs,
 		});
 		const tree = assembleTree(rootPath, result.entries, {
-			perDirLimit: WORKSPACE_DEFAULTS.perDirLimit,
-			rootLimit: WORKSPACE_DEFAULTS.perDirLimit,
-			lineCap: WORKSPACE_DEFAULTS.lineCap,
+			perDirLimit: limits.perDirLimit,
+			rootLimit: options.compact ? WORKSPACE_MAP_LIMITS.rootLimit : WORKSPACE_DEFAULTS.perDirLimit,
+			lineCap: limits.lineCap,
 			nativeTruncated: result.truncated,
 			// This tree is embedded in the cached system prompt. Render absolute
 			// mtimes so the block is byte-identical across sessions and does not
 			// bust the prompt cache (a relative "Nm ago" drifts every build).
 			ageMode: "absolute",
+			compactMap: options.compact,
 			compactMetadata: false,
 		});
+		if (options.compact && tree.rendered.length > WORKSPACE_MAP_LIMITS.maxChars) {
+			// Keep whole lines: a line cut mid-name would read as a real path.
+			const kept: string[] = [];
+			let length = 0;
+			for (const line of tree.rendered.split("\n")) {
+				const next = length + (kept.length > 0 ? 1 : 0) + line.length;
+				if (next > WORKSPACE_MAP_LIMITS.maxChars) break;
+				kept.push(line);
+				length = next;
+			}
+			tree.rendered = kept.join("\n");
+			tree.totalLines = kept.length;
+			tree.truncated = true;
+		}
 		return { ...tree, agentsMdFiles: result.agentsMdFiles };
 	} catch {
 		return { ...emptyTree(rootPath), agentsMdFiles: [] };
@@ -174,6 +194,8 @@ interface AssembleOptions {
 	 *   the system-prompt workspace tree). See {@link makeAgeFormatter}.
 	 */
 	ageMode: "relative" | "absolute";
+	/** Condensed directory overview, ordered by name without volatile metadata. */
+	compactMap?: boolean;
 	/** Whether metadata columns use compact or aligned separators. */
 	compactMetadata: boolean;
 }
@@ -236,7 +258,7 @@ function assembleTree(rootPath: string, entries: readonly GlobMatch[], opts: Ass
 	const stack: Array<{ node: Node; relPath: string }> = [{ node: root, relPath: "" }];
 	while (stack.length > 0) {
 		const { node, relPath } = stack.pop()!;
-		const all = (byParent.get(relPath) ?? []).slice().sort(byRecency);
+		const all = (byParent.get(relPath) ?? []).slice().sort(opts.compactMap ? byName : byRecency);
 		const limit = node.depth === 0 ? opts.rootLimit : opts.perDirLimit;
 		if (limit !== null && all.length > limit) {
 			node.children = limit <= 1 ? all.slice(0, Math.max(0, limit)) : [...all.slice(0, limit - 1), all.at(-1)!];
@@ -252,7 +274,8 @@ function assembleTree(rootPath: string, entries: readonly GlobMatch[], opts: Ass
 	}
 
 	const rawLines: RenderedLine[] = [];
-	renderNode(root, makeAgeFormatter(opts.ageMode), rawLines);
+	if (opts.compactMap) renderCompactMap(root, rawLines);
+	else renderNode(root, makeAgeFormatter(opts.ageMode), rawLines);
 	const { lines, elidedCount } = applyLineCap(rawLines, opts.lineCap);
 
 	return {
@@ -265,6 +288,30 @@ function assembleTree(rootPath: string, entries: readonly GlobMatch[], opts: Ass
 
 function byRecency(a: Node, b: Node): number {
 	return b.mtimeMs - a.mtimeMs || a.name.localeCompare(b.name);
+}
+
+function byName(a: Node, b: Node): number {
+	return Number(b.isDir) - Number(a.isDir) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+}
+
+/** One line per root entry so a large early subtree cannot crowd out later packages. */
+function renderCompactMap(root: Node, out: RenderedLine[]): void {
+	out.push({ label: ".", depth: 0, isRoot: true });
+	const last = root.children.at(-1);
+	for (const node of root.children) {
+		if (node === last && root.droppedCount > 0) {
+			out.push({ label: `  - … ${root.droppedCount} more root entries`, depth: 1, isRoot: false });
+		}
+		const names = node.children.map(child => `${child.name}${child.isDir ? "/" : ""}`);
+		// Same layout as renderNode: listed children, "… N more", then the last child.
+		const children =
+			node.droppedCount > 0 ? [...names.slice(0, -1), `… ${node.droppedCount} more`, ...names.slice(-1)] : names;
+		out.push({
+			label: `  - ${node.name}${node.isDir ? "/" : ""}${children.length ? `: ${children.join(", ")}` : ""}`,
+			depth: 1,
+			isRoot: false,
+		});
+	}
 }
 
 /**

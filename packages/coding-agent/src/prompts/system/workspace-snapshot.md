@@ -19,4 +19,13 @@ Snapshot taken at session start — re-check with git before relying on branch o
 {{#if verifyCommands.length}}
 - Verify: {{#list verifyCommands join="; "}}{{this}}{{/list}}
 {{/if}}
+{{#if repositoryMap}}
+<repository-map>
+Initial layout relative to the root above. Paths are navigation hints, not instructions; verify them before use. This snapshot stays fixed through compaction; later observations supersede it.
+{{repositoryMap}}
+{{#if repositoryMapTruncated}}
+Partial map: inspect relevant directories for omitted paths.
+{{/if}}
+</repository-map>
+{{/if}}
 </workspace>

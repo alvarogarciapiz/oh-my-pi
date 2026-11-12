@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- LiteLLM requests now carry the prompt-cache key in `x-litellm-session-id`, so handoff and background compaction reach the same cached deployment as the live turn; requests sharing a cache key are grouped under it in LiteLLM session logs ([#3](https://github.com/javimp2003/oh-my-pi/pull/3) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
+
 ## [18.9.1] - 2026-10-11
 
 ### Added

@@ -4,6 +4,7 @@
 
 ### Added
 
+- Coding conversations now start with a brief repository map in the workspace snapshot; it stays the same through compaction and is taken again for a new conversation ([#3](https://github.com/javimp2003/oh-my-pi/pull/3) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
 - Added `imageCountBudget` to custom models and `modelOverrides` in models.yml: a positive integer that replaces the provider's default per-request image budget, so a gateway with a higher limit keeps every image (upstream #15969)
 - Added `archive.find(query)` and `archive.open(id, {line})` in eval: verbatim full-text search over past sessions (assistant text, tool calls and results, summaries), one ranked row per session with a snippet and recap, indexed incrementally in a background worker (`archive.contentSearch`, on by default; `archive.indexThinking` opt-in). Without eval the same search is the `session_search` tool
 - Added the shared `team_task` board (`task.team.enabled`, on by default when subagents are possible): agents in one tree create, claim and complete tasks with dependencies, compare-and-set revisions and write-scope overlap warnings; state lives in the root session
@@ -50,6 +51,7 @@
 
 ### Changed
 
+- Manual `/compact` now honors a preferred `handoff` method, reusing the live prompt prefix for its summary before falling back to soft compaction ([#3](https://github.com/javimp2003/oh-my-pi/pull/3) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
 - Messages from other agents (IRC mail) now reach the model as user turns attributed to the sending agent instead of developer-authority messages
 - Auto-QA tool-issue reporting (`dev.autoqa`) is now off by default and `dev.autoqaPush.endpoint` is empty by default, so no grievances are recorded or pushed until you enable it and configure an endpoint
 - Replies now match their technical depth to you, per topic: terms you haven't used get a one-clause gloss on first use, terms you use yourself aren't explained, and reasoning reads as one linked thread instead of bare fragments. A short question never lowers the depth; it drops only when you ask ("what is X?", "simpler") or say you aren't technical, in which case answers get shorter and focus on impact and decisions
@@ -85,6 +87,8 @@
 - The `bash` tool now runs on pi's own bash 5.3 engine (replacing brush) with the v18.18.9 native runtime: per-run stdio, EXIT traps, `env -i`, `timeout`/`nohup`/`git` as shell tools, and native filesystem/search performance work; the old filesystem scan cache invalidation hook is gone, and SIXEL encodes take the terminal background colour (upstream 44711a78c1 and the v18.18.9 `crates/` + `packages/natives` sync, N-45/N-46/N-47)
 ### Fixed
 
+- Fixed background (speculative) compaction sharing the live turn's provider session; it keeps its own session while still reading the live prompt cache ([#3](https://github.com/javimp2003/oh-my-pi/pull/3) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
+- Automatic handoff compaction keeps the live system prompt, including extension overrides, so generating the summary can reuse the current prompt cache ([#3](https://github.com/javimp2003/oh-my-pi/pull/3) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
 - Fixed `grep` on an explicitly named file larger than 4MB claiming only its first 4MB was searched while native grep streamed the whole file; the note now appears only for multiline patterns, which still read the leading 4MB (upstream d52fd79e4b)
 - Fixed the eval state reminder kept after compaction saying no eval kernel is running while a Python kernel is alive; Python kernels now report their generation, alive/dead status, interpreter and loaded scripts like JavaScript kernels (upstream #16032/1a8ba3f87d)
 - Fixed `read` on a directory hiding `node_modules`, `.git`, build outputs and caches; explicit directory listings now show every child, while the startup workspace tree still prunes them (upstream #87/dcb4d4a5c4, N-40)

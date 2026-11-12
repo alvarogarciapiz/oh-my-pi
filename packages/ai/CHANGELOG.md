@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- LiteLLM side requests (handoff, background compaction) now send the live turn's `x-litellm-session-id` cache-affinity header while keeping their own transport session ([#3](https://github.com/javimp2003/oh-my-pi/pull/3) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
 - Fixed parallel tool calls from OpenAI-compatible gateways that reuse one stream index or send no ids (seen with GLM via LiteLLM) being merged into a single call that failed with "Tool call arguments are not valid JSON … Unexpected trailing characters"; each call now runs separately
 - Fixed `PI_REQ_DEBUG` dumps writing credential headers (`authorization`, API keys, cookies) to disk; request and response header records now show `[redacted]` for them
 
