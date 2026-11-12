@@ -257,6 +257,9 @@ function handle(update: ChatUpdate): void {
 		case "commands":
 			composer.setCommands(update.commands);
 			break;
+		case "skills":
+			composer.setSkills(update.skills, update.editable);
+			break;
 		case "mentionResults":
 			composer.mentionResults(update);
 			break;
@@ -264,7 +267,7 @@ function handle(update: ChatUpdate): void {
 			transcript.appendCommandOutput(update.text);
 			break;
 		case "notice":
-			composer.showNotice(update.level, update.message);
+			composer.showNotice(update.level, update.message, update.durationMs);
 			break;
 		case "insertText":
 			composer.insertText(update.text);
@@ -297,10 +300,10 @@ function handle(update: ChatUpdate): void {
 			openFind();
 			break;
 		case "skillCuration":
-			header.setCuration(update.status);
+			composer.setCuration(update.status);
 			break;
 		case "skillProposals":
-			header.setProposals(update.proposals);
+			composer.setSkillProposals(update.proposals);
 			break;
 	}
 }

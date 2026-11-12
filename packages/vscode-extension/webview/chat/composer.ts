@@ -14,6 +14,8 @@ import type {
 	PlanRunView,
 	ScopeCheckpointStats,
 	SessionState,
+	SessionSkill,
+	SkillProposalSummary,
 	SessionStats,
 	SubagentView,
 	TodoPhase,
@@ -37,6 +39,7 @@ import { AsyncJobsPanel } from "./async-jobs";
 import { PlaceholderTypewriter } from "./placeholder-typewriter";
 import { TodoPanel } from "./todo-panel";
 import type { PromptRecall } from "./transcript";
+import { SkillsPanel } from "./skills-panel";
 import { SubagentPanel } from "./subagent-panel";
 
 type Post = (request: ChatRequest) => void;
@@ -76,6 +79,8 @@ const PLACEHOLDER_PLAN = "Modo plan: describe qué quieres planificar";
 const PLACEHOLDER_DELEGATE = "Modo delegación: describe la tarea para los subagentes de MarIA Code";
 const PLACEHOLDER_LISTENING = "Escuchando… pulsa el micrófono para terminar, Esc para cancelar";
 const PLACEHOLDER_TRANSCRIBING = "Transcribiendo…";
+/** How long a self-dismissing notice takes to fade out; matches `.notice.fading` in chat.css. */
+const NOTICE_FADE_MS = 400;
 
 /** A pasted image file as an omp image block (base64 data and MIME type). */
 function readImage(file: File): Promise<ImageContent> {
@@ -108,6 +113,7 @@ export class Composer {
 	#send: HTMLButtonElement;
 	#stop: HTMLButtonElement;
 	#meter: ContextMeter;
+	#skills: SkillsPanel;
 	#scopeCheckpoint: ScopeCheckpointPanel;
 	#asyncJobs: AsyncJobsPanel;
 	#todos = new TodoPanel();
@@ -183,6 +189,7 @@ export class Composer {
 		this.#stop.hidden = true;
 		this.picker = new ModelPicker(post);
 		this.#meter = new ContextMeter(post);
+		this.#skills = new SkillsPanel(post, text => this.insertText(text));
 		this.#scopeCheckpoint = new ScopeCheckpointPanel(post);
 		this.#asyncJobs = new AsyncJobsPanel(post);
 		this.#cleanupOffer = new CleanupOffer(post);
@@ -268,6 +275,7 @@ export class Composer {
 						"div",
 						{ className: "composer-footer-right" },
 						this.#meter.element,
+						this.#skills.element,
 						this.#dictation.element,
 						this.#todos.element,
 						this.#asyncJobs.element,
@@ -316,6 +324,21 @@ export class Composer {
 	/** omp's task list (`todos`), for the task list button. */
 	setTodos(phases: TodoPhase[]): void {
 		this.#todos.setPhases(phases);
+	}
+
+	/** The session's skills (`skills`), for the skills button. */
+	setSkills(skills: SessionSkill[], editable: boolean): void {
+		this.#skills.setSkills(skills, editable);
+	}
+
+	/** Whether omp is reviewing the session's skills (`skillCuration`), for the skills button. */
+	setCuration(status: "idle" | "running"): void {
+		this.#skills.setCuration(status);
+	}
+
+	/** The skill changes awaiting a decision (`skillProposals`), listed in the skills popup. */
+	setSkillProposals(proposals: SkillProposalSummary[]): void {
+		this.#skills.setProposals(proposals);
 	}
 
 	setCommands(commands: AvailableSlashCommand[]): void {
@@ -437,12 +460,19 @@ export class Composer {
 		this.#queue.hidden = this.#queue.childElementCount === 0;
 	}
 
-	showNotice(level: NoticeLevel, message: string): void {
+	/** A banner above the composer; with `durationMs` it fades out and goes away on its own after that long. */
+	showNotice(level: NoticeLevel, message: string, durationMs?: number): void {
 		const notice = h("div", { className: `notice ${level}`, role: level === "error" ? "alert" : "status" });
 		const close = button("×", "notice-close", () => notice.remove());
 		setTooltip(close, "Dismiss");
 		notice.append(h("span", { className: "notice-text" }, message), close);
 		this.#notices.append(notice);
+		if (durationMs === undefined) return;
+		window.setTimeout(() => {
+			notice.classList.add("fading");
+			// By timer, not `transitionend`: with reduced motion there is no transition to end.
+			window.setTimeout(() => notice.remove(), NOTICE_FADE_MS);
+		}, durationMs);
 	}
 
 	/** Insert at the cursor (replacing any selection) and focus. */

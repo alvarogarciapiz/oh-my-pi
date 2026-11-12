@@ -32,7 +32,7 @@ import type { CallSnapshot, CheckpointStore, RepoCheckpoint } from "../checkpoin
 import { type CallChangesResult, callChanges } from "../editor-changes/call-changes";
 import type { CommandOutputStore } from "./command-outputs";
 import { playCompletionSound } from "../sounds";
-import { displayPath, ompCommand, readConfig, workspaceCwd, workspaceRoots } from "../config";
+import { agentDir, displayPath, ompCommand, readConfig, workspaceCwd, workspaceRoots } from "../config";
 import { ensureNoWorkspaceFolder, rememberNoWorkspaceSession } from "../no-workspace";
 import { lastSystemCa } from "../system-ca";
 import { DialogBridge } from "../dialogs";
@@ -51,6 +51,7 @@ import { TodoListTracker } from "./todo-list";
 import { userPrompt } from "./prompt-entries";
 import { SubagentRequestLog } from "./subagent-requests";
 import { SubagentRoster } from "./subagent-roster";
+import { importSkills } from "../skills/import-skills";
 
 /** How often a followed subagent's transcript is re-read while it runs. */
 const WATCH_POLL_MS = 2000;
@@ -242,6 +243,10 @@ export class AgentHost implements vscode.Disposable {
 	#stateReads = 0;
 	/** The folder omp runs in, as shown in the empty chat (home as `~`). */
 	#folder = "";
+	/** The folder omp runs in (absolute): imported project skills go under its `.omp/skills`. */
+	#cwd = "";
+	/** The session's skills can still be switched off (it has no message yet), as omp last reported. */
+	#skillsEditable = false;
 	readonly #onDidChange = new vscode.EventEmitter<AgentHost>();
 	/** Fires when the process, session, title, model, busy or settled state changes. */
 	readonly onDidChange = this.#onDidChange.event;
@@ -346,6 +351,7 @@ export class AgentHost implements vscode.Disposable {
 		await this.#stopProcess();
 		const cwd = this.noWorkspace ? await ensureNoWorkspaceFolder() : workspaceCwd();
 		this.#folder = displayPath(cwd);
+		this.#cwd = cwd;
 		const command = await ompCommand(cwd);
 		if (lastSystemCa) {
 			this.log.appendLine(
@@ -657,6 +663,51 @@ export class AgentHost implements vscode.Disposable {
 		const { cancelled } = await this.#requireProcess().request("cancel_async_job", { jobId: id });
 		if (!cancelled) this.#notice("info", `Background task ${id} is no longer running.`);
 		await this.#refreshJobs();
+	}
+
+	/** Switch the named skills off for the shown session only (omp refuses once it has a message). */
+	async setDisabledSkills(names: string[]): Promise<void> {
+		try {
+			this.#postSkills(await this.#requireProcess().request("set_disabled_skills", { names }));
+		} catch (error) {
+			// The webview toggled its checkboxes optimistically: bring them back to omp's state.
+			await this.refreshSkills();
+			throw error;
+		}
+	}
+
+	/**
+	 * Pick skill folders and copy them into the project's (chats with a workspace)
+	 * or the user's skills, then have omp discover them for the shown session.
+	 */
+	async importSkills(): Promise<void> {
+		const process = this.#requireProcess();
+		const imported = await importSkills(this.noWorkspace ? undefined : this.#cwd, agentDir());
+		if (imported.length === 0) return;
+		this.#postSkills(await process.request("reload_skills"));
+		this.#notice(
+			"info",
+			imported.length === 1
+				? `Skill «${imported[0]}» importada: ya está disponible en esta sesión.`
+				: `${imported.length} skills importadas (${imported.join(", ")}): ya están disponibles en esta sesión.`,
+		);
+	}
+
+	/** Re-read the session's skills and post them to `views`; an omp without the command posts nothing. */
+	async refreshSkills(views: Iterable<HostView> = this.#views): Promise<void> {
+		const process = this.process;
+		if (!process) return;
+		try {
+			const result = await process.request("get_skills");
+			if (this.#process === process) this.#postSkills(result, views);
+		} catch (error) {
+			this.log.appendLine(`[warning] get_skills failed: ${errorMessage(error)}`);
+		}
+	}
+
+	#postSkills(result: OmpResult<"get_skills">, views: Iterable<HostView> = this.#views): void {
+		this.#skillsEditable = result.editable;
+		for (const view of views) view.post({ type: "skills", skills: result.skills, editable: result.editable });
 	}
 
 	/** Follow `id`'s requests in the views (`subagentRequests`), or stop following with `null`. */
@@ -1134,6 +1185,8 @@ export class AgentHost implements vscode.Disposable {
 		switch (frame.type) {
 			case "available_commands_update":
 				this.post({ type: "commands", commands: frame.commands });
+				// Skills changed (switched off, imported, rediscovered): their commands come and go with them.
+				void this.refreshSkills();
 				break;
 			case "command_output": {
 				this.post({ type: "commandOutput", text: frame.text });
@@ -1209,6 +1262,8 @@ export class AgentHost implements vscode.Disposable {
 			this.#soundPending = true;
 			this.#soundSuppressed = false;
 			this.#onDidChange.fire(this);
+			// The first prompt locks the session's skills.
+			if (this.#skillsEditable) void this.refreshSkills();
 		} else if (frame.type === "agent_end") {
 			this.#busy = false;
 			if (this.#views.size === 0) this.#finishedUnseen = true;
@@ -1421,6 +1476,7 @@ export class AgentHost implements vscode.Disposable {
 			this.#sendThinkingLevels(targets).catch(error => this.log.appendLine(String(error))),
 		]);
 		if (commands) send({ type: "commands", commands: commands.commands });
+		await this.refreshSkills(targets);
 		// Model discovery can take seconds; the picker fills in when it finishes.
 		void this.availableModels()
 			.then(models => send({ type: "models", models }))

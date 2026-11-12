@@ -22,6 +22,7 @@ import type {
 	SessionState,
 	ScopeCheckpointLevel,
 	ScopeCheckpointStats,
+	SessionSkill,
 	SessionStats,
 	ThinkingLevel,
 	TodoPhase,
@@ -42,6 +43,7 @@ export type {
 	RpcAgentEvent,
 	ScopeCheckpointLevel,
 	ScopeCheckpointStats,
+	SessionSkill,
 	SessionState,
 	SessionStats,
 	TextContent,
@@ -295,12 +297,17 @@ export type ChatUpdate =
 	| { type: "thinkingLevels"; levels: ThinkingLevel[] }
 	/** Slash commands for composer completion. */
 	| { type: "commands"; commands: AvailableSlashCommand[] }
+	/**
+	 * The shown session's skills, switched-off ones included (`enabled: false`); `editable`
+	 * until its first prompt, after which they can no longer be switched off.
+	 */
+	| { type: "skills"; skills: SessionSkill[]; editable: boolean }
 	/** Answer to `searchMentions`. */
 	| { type: "mentionResults"; requestId: number; entries: WorkspaceMention[]; limited: boolean; error?: string }
 	/** Text printed by a local slash command (no agent turn). */
 	| { type: "commandOutput"; text: string }
-	/** Transient banner (errors, info) shown above the composer. */
-	| { type: "notice"; level: "info" | "warning" | "error"; message: string }
+	/** Banner (errors, info) shown above the composer; with `durationMs` it fades out on its own after that long. */
+	| { type: "notice"; level: "info" | "warning" | "error"; message: string; durationMs?: number }
 	/** Insert text at the composer cursor (Add Selection / Add File) and focus it. */
 	| { type: "insertText"; text: string }
 	| { type: "focusInput" }
@@ -407,6 +414,12 @@ export type ChatRequest =
 	| { type: "sendScopeCheckpoint"; level: ScopeCheckpointLevel }
 	/** Cancel one running background job; the host re-sends `asyncJobs`. */
 	| { type: "cancelAsyncJob"; id: string }
+	/** Re-read the session's skills; the host answers with `skills`. */
+	| { type: "getSkills" }
+	/** Switch the named skills off for the shown session only (before its first prompt); the host answers with `skills`. */
+	| { type: "setDisabledSkills"; names: string[] }
+	/** Pick skill folders and copy them into the project's or the user's skills; the host answers with `skills`. */
+	| { type: "importSkills" }
 	/** Follow one subagent's requests (`subagentRequests`), or stop with `null`. */
 	| { type: "watchSubagent"; id: string | null }
 	/** Answer a `planReview` with one of its options; `feedback` (refining) is what the user wants changed in the plan. */
