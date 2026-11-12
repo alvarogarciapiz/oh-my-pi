@@ -44,6 +44,7 @@ export type IconName =
 	| "listTodo"
 	| "folder"
 	| "mailDot"
+	| "messageQuestion"
 	| "litellm";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -108,6 +109,8 @@ const PATHS: Record<IconName, string> = {
 	// An envelope with a dot in its corner (Lucide "mail" with a badge): mark a chat unread.
 	mailDot:
 		"M22 13V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8M22 7l-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7M22 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0z",
+	// A speech bubble with a question mark (Lucide "message-circle-question"): omp asked the user.
+	messageQuestion: "M7.9 20A9 9 0 1 0 4 16.1L2 22zM9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3M12 17h.01",
 	// The LiteLLM bullet train, single-colour light variant (selfh.st icons "litellm-light.svg",
 	// CC BY 4.0, github.com/selfhst/icons): a model served through a LiteLLM gateway.
 	litellm:

@@ -1,12 +1,11 @@
 /**
- * omp's extension UI sub-protocol (`extension_ui_request`) rendered with
- * native VS Code prompts: the `ask` tool, tool confirmations, OAuth login
- * URLs, notifications, and status text.
+ * omp's extension UI sub-protocol (`extension_ui_request`): the `ask` tool and
+ * plan approvals render in the chat (through `DialogHost`); tool confirmations,
+ * OAuth login URLs, notifications, and status text use native VS Code prompts.
  */
 import * as vscode from "vscode";
 import type {
 	AskAnswer,
-	AskQuestion,
 	ExtensionUiRequest,
 	ExtensionUiResponse,
 } from "@oh-my-pi/pi-coding-agent/modes/rpc/wire/rpc-wire.generated";
@@ -24,9 +23,13 @@ export interface DialogHost {
 	 * resolves to the chosen option, or undefined when dismissed or `token` is cancelled.
 	 */
 	reviewPlan(request: SelectRequest, token: vscode.CancellationToken): Promise<string | undefined>;
+	/**
+	 * Show omp's `ask` questions in the chat; resolves to one answer per question,
+	 * or undefined when dismissed or `token` is cancelled.
+	 */
+	ask(request: AskRequest, token: vscode.CancellationToken): Promise<AskAnswer[] | undefined>;
 }
 
-const CUSTOM_ANSWER = "$(edit) Other (type your own)…";
 /** Selects with a multi-line title and at most this many options render as a modal with buttons. */
 const MAX_MODAL_OPTIONS = 3;
 /** omp's plan-approval options (`packages/coding-agent/src/modes/rpc/rpc-plan.ts`). */
@@ -34,6 +37,7 @@ const PLAN_APPROVE_OPTION = "Approve and execute";
 const PLAN_REFINE_OPTION = "Refine plan";
 
 export type SelectRequest = Extract<ExtensionUiRequest, { method: "select" }>;
+export type AskRequest = Extract<ExtensionUiRequest, { method: "ask" }>;
 
 function isPlanApproval(options: readonly string[]): boolean {
 	return options.length === 2 && options[0] === PLAN_APPROVE_OPTION && options[1] === PLAN_REFINE_OPTION;
@@ -166,13 +170,8 @@ export class DialogBridge {
 				return value === undefined ? undefined : { type: "extension_ui_response", id, value };
 			}
 			case "ask": {
-				const answers: AskAnswer[] = [];
-				for (const [index, question] of request.questions.entries()) {
-					const answer = await askQuestion(question, `${index + 1}/${request.questions.length}`, token);
-					if (!answer) return undefined;
-					answers.push(answer);
-				}
-				return { type: "extension_ui_response", id, answers };
+				const answers = await this.host.ask(request, token);
+				return answers && { type: "extension_ui_response", id, answers };
 			}
 		}
 	}
@@ -189,38 +188,4 @@ export class DialogBridge {
 		if (action === "Copy Link") await vscode.env.clipboard.writeText(target);
 		if (action === "Open Link") await vscode.env.openExternal(vscode.Uri.parse(target, true));
 	}
-}
-
-/** One `ask` question as a QuickPick, with free text always offered besides the options. */
-async function askQuestion(
-	question: AskQuestion,
-	step: string,
-	token: vscode.CancellationToken,
-): Promise<AskAnswer | undefined> {
-	const items: vscode.QuickPickItem[] = question.options.map((option, index) => ({
-		label: option.label,
-		description: index === question.recommended ? "(recommended)" : undefined,
-		detail: option.description,
-		picked: question.multi ? index === question.recommended : undefined,
-	}));
-	items.push({ label: CUSTOM_ANSWER, alwaysShow: true });
-	const title = question.header ? `${question.header} (${step})` : `MarIA Code asks (${step})`;
-	const picked = question.multi
-		? await vscode.window.showQuickPick(
-				items,
-				{ title, placeHolder: question.question, canPickMany: true, ignoreFocusOut: true },
-				token,
-			)
-		: await vscode.window
-				.showQuickPick(items, { title, placeHolder: question.question, ignoreFocusOut: true }, token)
-				.then(item => (item ? [item] : undefined));
-	if (!picked) return undefined;
-	const selectedOptions = picked.filter(item => item.label !== CUSTOM_ANSWER).map(item => item.label);
-	if (!picked.some(item => item.label === CUSTOM_ANSWER)) return { id: question.id, selectedOptions };
-	const customInput = await vscode.window.showInputBox(
-		{ title, prompt: question.question, ignoreFocusOut: true },
-		token,
-	);
-	if (customInput === undefined) return undefined;
-	return { id: question.id, selectedOptions, customInput };
 }

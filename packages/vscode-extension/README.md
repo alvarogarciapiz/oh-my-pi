@@ -23,7 +23,8 @@ MarIA Code is the coding agent for Unicaja developers and staff, inside VS Code:
 - **Model and reasoning level**: the picker in the composer, or `MarIA Code: Select Model…` / `MarIA Code: Select Thinking Level…`.
 - **Settings** (`MarIA Code: Settings`, gear icon): all omp settings by tab and group, with search, typed editors, and reset to default. Changes go through `omp config set`, so they apply to the terminal too.
 - **Editor integration**: `MarIA Code: Add Selection to Chat` (`Cmd+Alt+K` / `Ctrl+Alt+K`, editor context menu) quotes the selection with its file and lines; `MarIA Code: Add File to Chat` (Explorer context menu) inserts an `@file` mention.
-- **Dialogs**: questions from omp (`ask`), confirmations, and provider sign-in links open as native VS Code prompts.
+- **Questions from omp** (`ask`): a card in the middle of the chat, with the conversation and composer blurred behind it until you answer (the header stays usable, and the card comes back with your marks after the History or another chat). Several questions go step by step with a progress bar; the recommended option comes marked; "Otra respuesta…" takes typed or dictated text; Descartar stops the task. Once answered, the chat shows "Answered N questions", which unfolds into the options you chose, your own words, and the ones you left out.
+- **Dialogs**: confirmations and provider sign-in links open as native VS Code prompts.
 - `MarIA Code: Log In to a Provider…` / `MarIA Code: Log Out of a Provider…`, `MarIA Code: Compact Context`, `MarIA Code: Open MarIA Code in Terminal`, `MarIA Code: Show Log`.
 
 ## Requirements

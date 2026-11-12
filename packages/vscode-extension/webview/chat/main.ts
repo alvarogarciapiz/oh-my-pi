@@ -6,6 +6,7 @@ import type { AgentStatus, ChatRequest, ChatUpdate } from "../../src/protocol";
 import { button, h } from "../dom";
 import { installTooltips } from "../tooltip";
 import { getVsCodeApi } from "../vscode-api";
+import { AskDialog } from "./ask-dialog";
 import { Composer, type ComposerState } from "./composer";
 import { Header } from "./header";
 import { HistoryPanel } from "./history";
@@ -29,6 +30,7 @@ const history = new HistoryPanel(
 	open => {
 		header.setHistoryMode(open);
 		composer.element.hidden = open;
+		askDialog.setSuspended(open);
 	},
 	(path, text) => {
 		// The open chat shows already; another one first loads its transcript (`state`, then `history`).
@@ -81,11 +83,10 @@ const find = new FindBar(transcript.searchRoot, transcript.scrollElement);
 const root = document.getElementById("root")!;
 root.classList.add("chat");
 installTooltips();
-root.append(
-	header.element,
-	h("div", { className: "main" }, transcript.element, find.element, statusPanel, history.element),
-	composer.element,
-);
+const main = h("div", { className: "main" }, transcript.element, find.element, statusPanel, history.element);
+// Questions from omp cover this chat (transcript and composer), not the header with the History and new chats.
+const askDialog = new AskDialog(post, () => composer.cancelDictation(), [main, composer.element]);
+root.append(header.element, h("div", { className: "chat-stage" }, main, composer.element, askDialog.element));
 
 // Find in chat: Ctrl+F (⌘F on macOS, where Ctrl+F moves the caret), then F3 / ⌘G for the next match.
 // VS Code binds Ctrl+F to the code editor's find even while this webview has focus, so the
@@ -146,6 +147,7 @@ function handle(update: ChatUpdate): void {
 			setStatus(update.status);
 			break;
 		case "history":
+			askDialog.clear();
 			transcript.setHistory(update.messages, update.commandOutputs);
 			composer.resetHistoryNavigation();
 			history.close();
@@ -226,6 +228,13 @@ function handle(update: ChatUpdate): void {
 		case "planReviewClosed":
 			transcript.closePlanReview(update.id);
 			break;
+		case "askRequest":
+			history.close();
+			askDialog.show(update);
+			break;
+		case "askClosed":
+			askDialog.close(update.id);
+			break;
 		case "planRun":
 			composer.setPlanRun(update.run);
 			break;
@@ -263,18 +272,21 @@ function handle(update: ChatUpdate): void {
 			transcript.editAborted();
 			break;
 		case "dictation":
-			if (planFeedback.ownsDictation) planFeedback.dictationUpdate(update.state, update.text, update.error);
+			if (askDialog.ownsDictation) askDialog.dictationUpdate(update.state, update.text, update.error);
+			else if (planFeedback.ownsDictation) planFeedback.dictationUpdate(update.state, update.text, update.error);
 			else composer.dictationUpdate(update.state, update.text, update.error);
 			break;
 		case "wordPrediction":
 			composer.wordPrediction(update.requestId, update.suffix);
 			break;
 		case "dictationText":
-			if (planFeedback.ownsDictation) planFeedback.dictationText(update.text, update.submit);
+			if (askDialog.ownsDictation) askDialog.dictationText(update.text, update.submit);
+			else if (planFeedback.ownsDictation) planFeedback.dictationText(update.text, update.submit);
 			else composer.dictationText(update.text, update.submit);
 			break;
 		case "toggleDictation":
-			if (planFeedback.ownsDictation) planFeedback.toggleDictation();
+			if (askDialog.ownsDictation) askDialog.toggleDictation();
+			else if (planFeedback.ownsDictation) planFeedback.toggleDictation();
 			else composer.toggleDictation();
 			break;
 		case "openFind":

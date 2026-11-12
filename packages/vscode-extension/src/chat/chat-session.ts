@@ -582,6 +582,12 @@ export class ChatSession implements vscode.Disposable, HostView {
 			case "planDecision":
 				await this.#host?.decidePlan(request.id, request.value, request.feedback);
 				return;
+			case "askAnswer":
+				this.#host?.answerAsk(request.id, request.answers);
+				return;
+			case "askDismiss":
+				this.#host?.answerAsk(request.id, undefined);
+				return;
 			case "dismissPlanRun":
 				this.#host?.dismissPlanRun();
 				return;

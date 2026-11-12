@@ -162,7 +162,7 @@ export class ChatRegistry implements vscode.WebviewViewProvider, vscode.Disposab
 	async #offerHost(host: AgentHost): Promise<void> {
 		const name = host.title ?? "A background session";
 		const choice = await vscode.window.showInformationMessage(
-			`MarIA Code: ${name} is waiting for you to review its plan.`,
+			`MarIA Code: ${name} is waiting for your answer.`,
 			"Show",
 		);
 		if (choice !== "Show" || !host.process) return;

@@ -32,7 +32,7 @@ export class AgentPool implements vscode.Disposable {
 	/** Fires when a session starts or stops running, or turns unread or read. */
 	readonly onDidChangeActivity = this.#onDidChangeActivity.event;
 	readonly #onNeedsAttention = new vscode.EventEmitter<AgentHost>();
-	/** A session no view shows is waiting for the user (a plan to approve). */
+	/** A session no view shows is waiting for the user (a question to answer or a plan to approve). */
 	readonly onNeedsAttention = this.#onNeedsAttention.event;
 
 	constructor(

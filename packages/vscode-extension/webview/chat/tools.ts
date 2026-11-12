@@ -16,6 +16,7 @@ import {
 	diffStats,
 	str,
 } from "./activity";
+import { askSummary, askSummaryView } from "./ask-summary";
 import { fileLink, thumbnail } from "./content";
 
 const MAX_LINES = 200;
@@ -28,6 +29,7 @@ const FAMILY_ICONS: Record<ToolFamily, IconName> = {
 	web: "globe",
 	task: "bot",
 	plan: "plan",
+	ask: "messageQuestion",
 	other: "wrench",
 };
 
@@ -111,6 +113,8 @@ export class ToolCard {
 	#callArgs: Record<string, unknown> = {};
 	#purpose: string | undefined;
 	#diff: DiffStats | undefined;
+	/** `details` of the last result: an `ask` call shows the answers in it instead of its raw arguments. */
+	#details: unknown;
 
 	constructor(
 		private readonly label?: string,
@@ -134,14 +138,25 @@ export class ToolCard {
 		this.#callArgs = args;
 		// omp's harness-internal `i` argument is the model's one-line purpose for the call.
 		this.#purpose = intent ?? str(args.i);
+		this.#renderArgs();
+		this.#renderRow();
+	}
+
+	#renderArgs(): void {
+		const args = this.#callArgs;
+		const children: Node[] = [];
+		if (this.#purpose) children.push(h("div", { className: "activity-intent" }, this.#purpose));
+		if (this.#name.toLowerCase() === "ask") {
+			children.push(askSummaryView(askSummary(args, this.#details)));
+			this.#args.replaceChildren(...children);
+			return;
+		}
 		const command = str(args.command) ?? str(args.cmd);
 		const input = str(args.input);
 		// `write` bodies (plan drafts, new files) read better as text than as an escaped JSON string.
 		const content = str(args.content);
 		const shown: Record<string, true> = { command: true, cmd: true, i: true, input: true, content: true };
 		const rest = Object.fromEntries(Object.entries(args).filter(([k]) => !shown[k]));
-		const children: Node[] = [];
-		if (this.#purpose) children.push(h("div", { className: "activity-intent" }, this.#purpose));
 		if (command) children.push(truncatedPre(`$ ${command}`, "activity-pre"));
 		if (input) children.push(truncatedPre(input, "activity-pre"));
 		if (content) children.push(truncatedPre(content, "activity-pre"));
@@ -149,7 +164,6 @@ export class ToolCard {
 			children.push(truncatedPre(JSON.stringify(rest, null, 2), "activity-pre muted"));
 		}
 		this.#args.replaceChildren(...children);
-		this.#renderRow();
 	}
 
 	setStatus(status: ToolStatus): void {
@@ -169,9 +183,13 @@ export class ToolCard {
 		if (key === this.#resultKey) return;
 		this.#resultKey = key;
 		this.#diff = diffStats(parts.diff);
+		this.#details = result && typeof result === "object" && "details" in result ? result.details : undefined;
+		const ask = this.#name.toLowerCase() === "ask";
+		if (ask) this.#renderArgs();
 		const children: Node[] = [];
 		if (parts.diff) children.push(truncatedPre(parts.diff, "activity-pre diff", diffLineClass));
-		if (parts.text) children.push(truncatedPre(parts.text, "activity-pre"));
+		// Answered questions show in the summary; the raw text stays for what has none (a dismissal, an error).
+		if (parts.text && !(ask && this.#details)) children.push(truncatedPre(parts.text, "activity-pre"));
 		for (const image of parts.images) children.push(thumbnail(image));
 		this.#result.replaceChildren(...children);
 		this.#renderRow();

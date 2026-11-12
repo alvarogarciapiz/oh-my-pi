@@ -102,6 +102,19 @@ describe("activityLabel", () => {
 			"Proposed plan",
 		);
 	});
+
+	it("says the user answered the ask questions, titled by their topics", () => {
+		const args = { questions: [{ header: "Base de datos", question: "¿Qué motor?" }, { question: "¿Cuándo  lo\nlanzamos?" }] };
+		expect(activityLabel("ask", args, "done")).toEqual({
+			verb: "Answered 2 questions",
+			subject: { text: "Base de datos · ¿Cuándo lo lanzamos?" },
+			code: false,
+			family: "ask",
+		});
+		expect(activityLabel("ask", { questions: [{ question: "¿Sí?" }] }, "done").verb).toBe("Answered 1 question");
+		expect(activityLabel("ask", args, "running").verb).toBe("Waiting for your answer");
+		expect(activityLabel("ask", args, "error").verb).toBe("Unanswered questions");
+	});
 });
 
 describe("diffStats", () => {

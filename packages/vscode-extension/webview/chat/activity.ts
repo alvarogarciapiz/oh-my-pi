@@ -6,7 +6,7 @@
 export type ToolStatus = "pending" | "running" | "done" | "error" | "interrupted" | "none";
 
 /** Icon family of a tool's activity row. */
-export type ToolFamily = "run" | "code" | "read" | "edit" | "search" | "web" | "task" | "plan" | "other";
+export type ToolFamily = "run" | "code" | "read" | "edit" | "search" | "web" | "task" | "plan" | "ask" | "other";
 
 /** Plan mode's approval device (`packages/coding-agent/src/tools/resolve.ts`). */
 const PROPOSE_PATH = "xd://propose";
@@ -158,6 +158,29 @@ export function activityLabel(
 		return title
 			? { verb, subject: { text: title }, code: false, family: "plan" }
 			: { verb, code: false, family: "plan" };
+	}
+	// omp's `ask`: what the user did with the questions, and their topics.
+	if (tool === "ask") {
+		const questions: unknown[] = Array.isArray(args.questions) ? args.questions : [];
+		const count = questions.length;
+		const verb = running
+			? "Waiting for your answer"
+			: status !== "done"
+				? "Unanswered questions"
+				: count === 1
+					? "Answered 1 question"
+					: count > 1
+						? `Answered ${count} questions`
+						: "Answered";
+		const topics = questions
+			.map(question => {
+				const fields = question && typeof question === "object" ? (question as Record<string, unknown>) : {};
+				return str(fields.header)?.trim() ?? str(fields.question)?.replace(/\s+/g, " ").trim();
+			})
+			.filter(topic => topic !== undefined);
+		return topics.length > 0
+			? { verb, subject: { text: topics.join(" · ") }, code: false, family: "ask" }
+			: { verb, code: false, family: "ask" };
 	}
 	const runner = RUNNERS[tool];
 	if (runner) {

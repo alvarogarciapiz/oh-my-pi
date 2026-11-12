@@ -13,6 +13,8 @@
  */
 import type {
 	AgentMessage,
+	AskAnswer,
+	AskQuestion,
 	AsyncJob,
 	AvailableSlashCommand,
 	ImageContent,
@@ -27,6 +29,8 @@ import type {
 
 export type {
 	AgentMessage,
+	AskAnswer,
+	AskQuestion,
 	AssistantMessage,
 	AsyncJob,
 	AsyncJobStatus,
@@ -318,6 +322,10 @@ export type ChatUpdate =
 	| { type: "planRun"; run: PlanRunView | null }
 	/** omp withdrew the plan review (the turn was aborted); disable its buttons. */
 	| { type: "planReviewClosed"; id: string }
+	/** omp asks the user (`ask` tool): show the questions over the chat and answer with `askAnswer` or `askDismiss`. */
+	| { type: "askRequest"; id: string; questions: AskQuestion[] }
+	/** The question `id` no longer waits (answered in another view, cancelled by omp, timed out, or the process stopped): close its box. */
+	| { type: "askClosed"; id: string }
 	/** omp is reviewing the skills the last task of the open session relied on (`running`), or not (`idle`). */
 	| { type: "skillCuration"; status: "idle" | "running" }
 	/** Pending skill proposals of the shown session, newest first. */
@@ -385,6 +393,10 @@ export type ChatRequest =
 	| { type: "watchSubagent"; id: string | null }
 	/** Answer a `planReview` with one of its options; `feedback` (refining) is what the user wants changed in the plan. */
 	| { type: "planDecision"; id: string; value: string; feedback?: string }
+	/** Answer an `askRequest`: one answer per question, in question order. */
+	| { type: "askAnswer"; id: string; answers: AskAnswer[] }
+	/** Close an `askRequest` without answering; omp stops the task. */
+	| { type: "askDismiss"; id: string }
 	/** Stop tracking the approved plan's execution (the plan button turns off). */
 	| { type: "dismissPlanRun" }
 	/** Open a plan file (absolute path) rendered in an editor tab. */

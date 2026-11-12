@@ -13,6 +13,8 @@ import { setTimeout as sleep } from "node:timers/promises";
 import * as vscode from "vscode";
 import type {
 	AgentMessage,
+	AskAnswer,
+	AskQuestion,
 	ImageContent,
 	RpcNotification,
 	SessionState,
@@ -169,6 +171,7 @@ export interface HostView {
 }
 
 type PlanReview = Extract<ChatUpdate, { type: "planReview" }>;
+type AskRequestUpdate = Extract<ChatUpdate, { type: "askRequest" }>;
 type SkillCuration = Extract<ChatUpdate, { type: "skillCuration" }>;
 
 const CURATION_IDLE: SkillCuration = { type: "skillCuration", status: "idle" };
@@ -215,6 +218,8 @@ export class AgentHost implements vscode.Disposable {
 	readonly #statusTexts = new Map<string, string>();
 	/** Plan reviews awaiting a decision, by request id; re-sent to views that attach later. */
 	readonly #planReviews = new Map<string, { update: PlanReview; resolve(value: string | undefined): void }>();
+	/** `ask` questions awaiting an answer, by request id; re-sent with every transcript snapshot. */
+	readonly #asks = new Map<string, { update: AskRequestUpdate; resolve(answers: AskAnswer[] | undefined): void }>();
 	/** Whether omp is reviewing the open session's skills, re-sent to views that attach later. */
 	#curation: SkillCuration = CURATION_IDLE;
 	/** The approved plan being executed, folded from the transcript, for the plan button. */
@@ -241,7 +246,7 @@ export class AgentHost implements vscode.Disposable {
 	/** Fires when the process, session, title, model, busy or settled state changes. */
 	readonly onDidChange = this.#onDidChange.event;
 	readonly #onNeedsAttention = new vscode.EventEmitter<AgentHost>();
-	/** Fires when the session waits for the user (a plan to approve) with no view showing it. */
+	/** Fires when the session waits for the user (a question to answer or a plan to approve) with no view showing it. */
 	readonly onNeedsAttention = this.#onNeedsAttention.event;
 
 	constructor(
@@ -263,6 +268,7 @@ export class AgentHost implements vscode.Disposable {
 			setEditorText: text => this.post({ type: "insertText", text }),
 			log: line => this.log.appendLine(line),
 			reviewPlan: (request, token) => this.#reviewPlan(request, token),
+			ask: (request, token) => this.#ask(request, token),
 		});
 	}
 
@@ -740,6 +746,15 @@ export class AgentHost implements vscode.Disposable {
 		}
 	}
 
+	/** Answer (or, with `undefined`, dismiss) an `ask` shown in a view; every view closes its box. */
+	answerAsk(id: string, answers: AskAnswer[] | undefined): void {
+		const ask = this.#asks.get(id);
+		if (!ask) return;
+		this.#asks.delete(id);
+		this.post({ type: "askClosed", id });
+		ask.resolve(answers);
+	}
+
 	/** The executing plan for the views; hidden while plan mode is on (the button is busy planning). */
 	#planRunView(): PlanRunView | null {
 		if (this.#state?.planMode?.enabled) return null;
@@ -1089,6 +1104,30 @@ export class AgentHost implements vscode.Disposable {
 		}
 	}
 
+	/** omp's `ask` questions, shown over the chat in every view until one answers them. */
+	async #ask(
+		request: { id: string; questions: AskQuestion[] },
+		token: vscode.CancellationToken,
+	): Promise<AskAnswer[] | undefined> {
+		if (token.isCancellationRequested) return undefined;
+		const update: AskRequestUpdate = { type: "askRequest", id: request.id, questions: request.questions };
+		const { promise, resolve } = Promise.withResolvers<AskAnswer[] | undefined>();
+		this.#asks.set(request.id, { update, resolve });
+		const cancelled = token.onCancellationRequested(() => {
+			this.#asks.delete(request.id);
+			this.post({ type: "askClosed", id: request.id });
+			resolve(undefined);
+		});
+		if (this.#views.size === 0) this.#onNeedsAttention.fire(this);
+		for (const view of this.#views) view.reveal();
+		this.post(update);
+		try {
+			return await promise;
+		} finally {
+			cancelled.dispose();
+		}
+	}
+
 	#onFrame(process: OmpProcess, frame: RpcNotification): void {
 		if (this.#process !== process) return;
 		this.#trackCheckpoint(frame);
@@ -1367,6 +1406,8 @@ export class AgentHost implements vscode.Disposable {
 			sessionFile && this.commandOutputs ? await this.commandOutputs.load(sessionFile).catch(() => []) : [];
 		if (this.#process !== process) return;
 		send({ type: "history", messages, commandOutputs });
+		// The webview drops its question box with each transcript; questions still waiting come back on top of it.
+		for (const ask of this.#asks.values()) send(ask.update);
 		this.#planRun.load(messages);
 		if (this.#planRun.id !== undefined && this.#planRun.id === this.#dismissedPlanRun) this.#planRun.clear();
 		const run = this.#planRunView();

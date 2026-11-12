@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.37.0]
+
+### Changed
+
+- MarIA Code's questions (the `ask` tool) appear in a card in the middle of the chat instead of the editor's quick pick: the conversation and composer blur behind it until you answer, several questions go step by step with a progress bar, the recommended option comes marked, "Otra respuesta…" takes typed or dictated text, and the card stays with your marks if you open the History or another chat and come back
+- After you answer, the chat shows "Answered N questions" with their topics instead of "Called ask"; unfolding it shows each question with the options you chose, your own words, and the options you left out
+
 ## [0.36.0]
 
 ### Added

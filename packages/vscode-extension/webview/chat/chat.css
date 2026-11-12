@@ -1474,6 +1474,175 @@ code {
 	color: var(--c-fg-3);
 }
 
+/* What the user answered to omp's ask, in its activity row (webview/chat/ask-summary.ts). */
+.activity-icon .icon-messageQuestion {
+	color: var(--omp-accent);
+}
+
+/* Answers are short: show them all rather than scrolling inside the row's 320px. */
+.activity-body:has(.ask-summary) {
+	max-height: 640px;
+}
+
+.ask-summary {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.ask-summary-item {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding: 10px 12px;
+	border: 1px solid var(--c-border-heavy);
+	border-left: 3px solid var(--omp-accent);
+	border-radius: var(--r-md);
+	background: var(--c-bg);
+}
+
+.ask-summary-head {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
+}
+
+.ask-summary-index {
+	flex: none;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 18px;
+	height: 18px;
+	border-radius: 9999px;
+	background: color-mix(in srgb, var(--omp-accent) 18%, transparent);
+	color: var(--omp-accent);
+	font-size: 11px;
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+}
+
+.ask-summary-chip {
+	min-width: 0;
+	padding: 0 8px;
+	border-radius: 9999px;
+	border: 1px solid color-mix(in srgb, var(--omp-accent) 55%, transparent);
+	background: color-mix(in srgb, var(--omp-accent) 14%, transparent);
+	color: var(--omp-accent);
+	font-size: var(--fs-sm);
+	font-weight: 600;
+	line-height: 18px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.ask-summary-kind {
+	color: var(--c-fg-3);
+	font-size: 10px;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+}
+
+.ask-summary-kind.warning {
+	color: var(--c-error);
+}
+
+.ask-summary-question {
+	font-weight: 500;
+	overflow-wrap: anywhere;
+}
+
+.ask-summary-question > :first-child {
+	margin-top: 0;
+}
+
+.ask-summary-question > :last-child {
+	margin-bottom: 0;
+}
+
+.ask-summary-answers {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.ask-summary-answer {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	padding: 6px 10px;
+	border: 1px solid var(--omp-accent);
+	border-radius: var(--r-md);
+	background: color-mix(in srgb, var(--omp-accent) 10%, transparent);
+}
+
+.ask-summary-mark {
+	flex: none;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 16px;
+	height: 16px;
+	margin-top: 2px;
+	border-radius: 9999px;
+	background: var(--omp-accent);
+	color: var(--omp-accent-fg);
+}
+
+.ask-summary-mark .icon {
+	width: 11px;
+	height: 11px;
+}
+
+.ask-summary-answer-text {
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+}
+
+.ask-summary-answer-label {
+	font-weight: 500;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+.ask-summary-answer-desc {
+	color: var(--c-fg-3);
+	font-size: var(--fs-sm);
+}
+
+.ask-summary-empty,
+.ask-summary-note {
+	color: var(--c-fg-3);
+	font-size: var(--fs-sm);
+	font-style: italic;
+}
+
+.ask-summary-others {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 4px;
+}
+
+.ask-summary-others-label {
+	margin-right: 2px;
+	color: var(--c-fg-3);
+	font-size: var(--fs-sm);
+}
+
+.ask-summary-other {
+	padding: 0 8px;
+	border: 1px dashed var(--c-border-heavy);
+	border-radius: 9999px;
+	color: var(--c-fg-3);
+	font-size: var(--fs-sm);
+	line-height: 18px;
+}
+
 /* Revert button under the diff of a `skill-update` notice; Approve / Reject / Open diff under a skill proposal. */
 .skill-update-actions {
 	display: flex;
@@ -4694,6 +4863,475 @@ code {
 .plan-feedback .plan-card-approve:disabled {
 	opacity: 0.5;
 	cursor: default;
+}
+
+/* Questions from omp's ask tool, over the chat (webview/chat/ask-dialog.ts). */
+
+/* The chat under the header: transcript and composer, which the question box covers. */
+.chat-stage {
+	flex: 1;
+	min-height: 0;
+	position: relative;
+	display: flex;
+	flex-direction: column;
+}
+
+.ask-overlay {
+	position: absolute;
+	inset: 0;
+	z-index: 6;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 16px;
+	background: color-mix(in srgb, var(--c-bg) 55%, transparent);
+	backdrop-filter: blur(6px) saturate(0.85);
+	animation: ask-overlay-in 0.16s ease-out;
+}
+
+.ask-card {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	width: min(560px, 100%);
+	max-height: 100%;
+	border: 1px solid color-mix(in srgb, var(--omp-accent) 35%, var(--c-border-heavy));
+	border-radius: var(--r-2xl);
+	background: var(--c-surface);
+	box-shadow:
+		0 12px 40px rgb(0 0 0 / 0.45),
+		0 0 0 4px color-mix(in srgb, var(--omp-accent) 8%, transparent);
+	overflow: hidden;
+	animation: ask-card-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.ask-card::before {
+	content: "";
+	flex: none;
+	height: 3px;
+	background: linear-gradient(90deg, var(--omp-accent), color-mix(in srgb, var(--omp-accent) 25%, transparent));
+}
+
+.ask-header {
+	flex: none;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 40px;
+	padding: 6px 14px;
+	border-bottom: 1px solid var(--c-border);
+}
+
+.ask-mark {
+	flex: none;
+	width: 18px;
+	height: 18px;
+	background: url("maria-mark.png") center / contain no-repeat;
+}
+
+.ask-label {
+	flex: none;
+	font-weight: 500;
+}
+
+.ask-chip {
+	min-width: 0;
+	padding: 1px 8px;
+	border-radius: 9999px;
+	border: 1px solid color-mix(in srgb, var(--omp-accent) 55%, transparent);
+	background: color-mix(in srgb, var(--omp-accent) 14%, transparent);
+	color: var(--omp-accent);
+	font-size: var(--fs-sm);
+	font-weight: 600;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.ask-spacer {
+	flex: 1;
+}
+
+.ask-step {
+	flex: none;
+	color: var(--c-fg-3);
+	font-size: var(--fs-sm);
+	font-variant-numeric: tabular-nums;
+}
+
+.ask-progress {
+	flex: none;
+	display: flex;
+	gap: 6px;
+	padding: 10px 14px 0;
+}
+
+.ask-dot {
+	flex: 1;
+	height: 4px;
+	padding: 0;
+	border: none;
+	border-radius: 9999px;
+	background: var(--c-border-heavy);
+	transition: background 0.2s;
+}
+
+.ask-dot:disabled {
+	cursor: default;
+}
+
+.ask-dot.done {
+	background: color-mix(in srgb, var(--omp-accent) 55%, transparent);
+}
+
+.ask-dot.current {
+	background: var(--omp-accent);
+}
+
+.ask-body {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	min-height: 0;
+	overflow-y: auto;
+	padding: 14px;
+}
+
+.ask-body.enter-forward {
+	animation: ask-step-in-forward 0.18s ease-out;
+}
+
+.ask-body.enter-back {
+	animation: ask-step-in-back 0.18s ease-out;
+}
+
+.ask-question {
+	font-size: calc(var(--fs) + 1px);
+	font-weight: 500;
+	line-height: 1.45;
+	overflow-wrap: anywhere;
+}
+
+.ask-question > :first-child {
+	margin-top: 0;
+}
+
+.ask-question > :last-child {
+	margin-bottom: 0;
+}
+
+.ask-hint {
+	margin-top: -4px;
+	color: var(--c-fg-3);
+	font-size: var(--fs-sm);
+}
+
+.ask-options {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.ask-option {
+	display: flex;
+	align-items: flex-start;
+	gap: 10px;
+	width: 100%;
+	padding: 10px 12px;
+	border: 1px solid var(--c-border-heavy);
+	border-radius: var(--r-lg);
+	background: transparent;
+	text-align: left;
+	transition:
+		border-color 0.15s,
+		background 0.15s,
+		transform 0.1s;
+}
+
+.ask-option:hover {
+	background: var(--c-hover);
+}
+
+.ask-option:active {
+	transform: scale(0.995);
+}
+
+.ask-option:focus-visible {
+	outline: 1px solid var(--omp-accent);
+	outline-offset: 1px;
+}
+
+.ask-option[aria-checked="true"] {
+	border-color: var(--omp-accent);
+	background: color-mix(in srgb, var(--omp-accent) 10%, transparent);
+}
+
+.ask-indicator {
+	flex: none;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 16px;
+	height: 16px;
+	margin-top: 2px;
+	border: 1.5px solid var(--c-fg-3);
+	border-radius: 9999px;
+	transition:
+		border-color 0.15s,
+		background 0.15s;
+}
+
+.ask-option[role="checkbox"] .ask-indicator {
+	border-radius: 4px;
+}
+
+.ask-indicator .icon {
+	width: 12px;
+	height: 12px;
+	color: var(--omp-accent-fg);
+	visibility: hidden;
+}
+
+.ask-option[aria-checked="true"] .ask-indicator {
+	border-color: var(--omp-accent);
+	background: var(--omp-accent);
+}
+
+.ask-option[role="radio"][aria-checked="true"] .ask-indicator {
+	box-shadow: inset 0 0 0 3px var(--c-surface);
+}
+
+.ask-option[aria-checked="true"] .ask-indicator .icon {
+	visibility: visible;
+}
+
+.ask-option-text {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.ask-option-title {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
+}
+
+.ask-option-label {
+	font-weight: 500;
+	overflow-wrap: anywhere;
+}
+
+.ask-badge {
+	padding: 1px 6px;
+	border-radius: 9999px;
+	background: color-mix(in srgb, var(--omp-accent) 18%, transparent);
+	color: var(--omp-accent);
+	font-size: 10px;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+}
+
+.ask-option-desc {
+	color: var(--c-fg-3);
+	font-size: var(--fs-sm);
+	overflow-wrap: anywhere;
+}
+
+.ask-option-preview {
+	max-height: 220px;
+	overflow: auto;
+	margin: -2px 0 2px 26px;
+	padding: 8px 10px;
+	border-left: 2px solid var(--omp-accent);
+	border-radius: var(--r-sm);
+	background: var(--c-bg);
+	font-size: var(--fs-sm);
+}
+
+.ask-option-preview > :first-child {
+	margin-top: 0;
+}
+
+.ask-option-preview > :last-child {
+	margin-bottom: 0;
+}
+
+.ask-key {
+	flex: none;
+	margin-left: auto;
+	padding: 0 5px;
+	border: 1px solid var(--c-border-heavy);
+	border-radius: 4px;
+	color: var(--c-fg-3);
+	font-family: inherit;
+	font-size: var(--fs-sm);
+	line-height: 18px;
+}
+
+.ask-other .ask-option-title .icon {
+	width: 14px;
+	height: 14px;
+	color: var(--omp-accent);
+}
+
+.ask-other-field {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	animation: cleanup-offer-in 0.15s ease-out;
+}
+
+.ask-other-input {
+	min-height: 72px;
+	max-height: 30vh;
+	padding: 8px 10px;
+	border: 1px solid var(--c-border-heavy);
+	border-radius: var(--r-md);
+	background: var(--c-bg);
+	color: var(--c-fg);
+	font: inherit;
+	resize: vertical;
+}
+
+.ask-other-input:focus {
+	outline: none;
+	border-color: var(--omp-accent);
+}
+
+.ask-other-input::placeholder {
+	color: var(--vscode-input-placeholderForeground, var(--c-fg-3));
+}
+
+.ask-other-tools {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.ask-other-hint {
+	color: var(--c-fg-3);
+	font-size: var(--fs-sm);
+}
+
+.ask-error {
+	color: var(--c-error);
+	font-size: var(--fs-sm);
+}
+
+.ask-footer {
+	flex: none;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 10px 14px;
+	border-top: 1px solid var(--c-border);
+}
+
+.ask-dismiss,
+.ask-back {
+	flex: none;
+	height: 28px;
+	padding: 0 12px;
+	border: 1px solid var(--c-border-heavy);
+	border-radius: 9999px;
+	background: transparent;
+	color: var(--c-fg);
+	font-size: var(--fs-sm);
+	transition:
+		background 0.15s,
+		border-color 0.15s,
+		color 0.15s;
+}
+
+.ask-back:hover {
+	background: var(--c-hover);
+}
+
+.ask-dismiss:hover {
+	border-color: color-mix(in srgb, var(--c-error) 45%, transparent);
+	color: var(--c-error);
+}
+
+.ask-primary {
+	flex: none;
+	min-width: 96px;
+	height: 28px;
+	padding: 0 16px;
+	border: none;
+	border-radius: 9999px;
+	background: var(--omp-accent);
+	color: var(--omp-accent-fg);
+	font-size: var(--fs-sm);
+	font-weight: 500;
+	transition:
+		opacity 0.15s,
+		filter 0.15s;
+}
+
+.ask-primary:hover:not(:disabled) {
+	filter: brightness(1.08);
+}
+
+.ask-primary:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+
+@keyframes ask-overlay-in {
+	from {
+		opacity: 0;
+	}
+}
+
+@keyframes ask-card-in {
+	from {
+		opacity: 0;
+		transform: translateY(10px) scale(0.98);
+	}
+}
+
+@keyframes ask-step-in-forward {
+	from {
+		opacity: 0;
+		transform: translateX(12px);
+	}
+}
+
+@keyframes ask-step-in-back {
+	from {
+		opacity: 0;
+		transform: translateX(-12px);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.ask-overlay,
+	.ask-card,
+	.ask-body,
+	.ask-other-field {
+		animation: none;
+	}
+
+	.ask-option,
+	.ask-dot,
+	.ask-indicator {
+		transition: none;
+	}
+}
+
+@media (max-width: 360px) {
+	.ask-key {
+		display: none;
+	}
+
+	.ask-card {
+		border-radius: var(--r-xl);
+	}
 }
 
 .send-button,
