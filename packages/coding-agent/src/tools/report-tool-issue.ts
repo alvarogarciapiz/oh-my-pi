@@ -147,11 +147,12 @@ function parseReportIssueBody(text: string): { tool: string; report: string } {
 /**
  * Whether Auto-QA is active for this session.
  *
- * Precedence: explicit `dev.autoqa` (env `PI_AUTO_QA` or any settings layer) >
- * default-on unless the user previously denied consent. The denial veto only
- * applies to the default: explicitly configuring `dev.autoqa: true` re-enables
- * injection (recording still no-ops until consent is granted). Without settings,
- * only the env flag can enable it.
+ * Precedence: an explicit `dev.autoqa` (env `PI_AUTO_QA` or any settings layer)
+ * wins; otherwise the default applies, which is off. A previously denied consent
+ * vetoes only that default, never an explicit `dev.autoqa: true` (recording
+ * still no-ops until consent is granted, and nothing is pushed until a push
+ * endpoint is configured; `dev.autoqaPush.endpoint` is empty by default).
+ * Without settings, only the env flag can enable it.
  */
 export function isAutoQaEnabled(settings?: Settings): boolean {
 	if (!settings) return cfgDevAutoqa.envValue() ?? false;
