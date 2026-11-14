@@ -4,6 +4,7 @@
 
 ### Added
 
+- Copy complete assistant responses as Markdown from native message actions or the terminal dock ([#4](https://github.com/javimp2003/oh-my-pi/pull/4) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
 - Added categorized workbench navigation with search, session details and layouts that adapt to terminal size ([#4](https://github.com/javimp2003/oh-my-pi/pull/4) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
 - Settings now include an Advanced tab, free-form value editing with `Ctrl+E`, and reset with `Ctrl+R` ([#4](https://github.com/javimp2003/oh-my-pi/pull/4) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
 - Added the `pinnedInput` composer preference: the chrome below the transcript owns the bottom rows and the header plus transcript render through `TranscriptContainer.renderScrollWindow()` into a scrollable window above it, driven by `Composer.scrollTranscript()`, `scrollTranscriptPage()`, and `followTranscript()`; nothing retires to native scrollback until the shutdown flush ([#1155](https://github.com/can1357/oh-my-pi/issues/1155))

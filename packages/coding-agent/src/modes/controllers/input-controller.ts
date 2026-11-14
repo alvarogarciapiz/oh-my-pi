@@ -177,6 +177,7 @@ const OMP_STATUS_LINE_RE = /^\s*in:\s+\d+\s+out:\s+\d+(?:\s+cache\s+\S+)?\s+t:\s
  */
 const FOCUSED_VIEW_COMMANDS: Record<string, (args: string) => boolean> = {
 	btw: () => true,
+	copy: args => ["answer", "response"].includes(args.trim().toLowerCase()),
 	export: () => true,
 	usage: args => {
 		const { verb, rest } = parseSubcommand(args);
@@ -840,14 +841,14 @@ export class InputController {
 				this.#selectionDrag = false;
 				// A held selection waits for the copy chord; a press that never dragged is a click.
 				if (!this.ctx.finishTextSelection() && clickCapture) {
-					this.#focusClickedAgent(event.row);
+					this.#activateClickedTarget(event.row, event.col);
 				}
 				return { consume: true };
 			}
 		}
 		if (!clickCapture) return { consume: true };
 		if (event.motion) this.#updateHoverHighlight(event.row);
-		else if (event.leftClick) this.#focusClickedAgent(event.row);
+		else if (event.leftClick) this.#activateClickedTarget(event.row, event.col);
 		return { consume: true };
 	}
 
@@ -914,6 +915,13 @@ export class InputController {
 			return;
 		}
 		this.#focusResolvedAgent(nextId);
+	}
+
+	#activateClickedTarget(screenRow: number, col: number): void {
+		const viewport = this.ctx.ui.getMutableViewport();
+		const local = screenRow - viewport.top;
+		if (viewport.length === 0 || local < 0 || local >= viewport.length) return;
+		if (!this.ctx.activateViewportClick?.(local, col)) this.#focusClickedAgent(screenRow);
 	}
 
 	/** Focus a resolved agent id, ignoring already-viewing and surfacing errors as status. */

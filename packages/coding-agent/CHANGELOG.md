@@ -4,6 +4,7 @@
 
 ### Added
 
+- Copy the complete answer with the terminal's Copy response button or `/copy answer`, including when viewing a subagent ([#4](https://github.com/javimp2003/oh-my-pi/pull/4) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
 - Coding conversations now start with a brief repository map in the workspace snapshot; it stays the same through compaction and is taken again for a new conversation ([#3](https://github.com/javimp2003/oh-my-pi/pull/3) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
 - Added `imageCountBudget` to custom models and `modelOverrides` in models.yml: a positive integer that replaces the provider's default per-request image budget, so a gateway with a higher limit keeps every image (upstream #15969)
 - Added acceptance contracts with revision-bound check evidence and optional independent executable review ([#4](https://github.com/javimp2003/oh-my-pi/pull/4) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
