@@ -75,6 +75,8 @@ import { MAX_RPC_FRAME_BYTES, MAX_RPC_REASSEMBLED_BYTES, RpcFrameEncoder } from 
 import { claimRpcInput, readRpcInputFrames } from "./rpc-input";
 import { pageRpcMessages, RPC_MESSAGES_PAGE_BUSY_ERROR, RpcMessagesPageError } from "./rpc-messages";
 import { RpcBtwController } from "./rpc-btw";
+import { RpcAskSelectionController } from "./rpc-ask-selection";
+import { RpcEnhancePromptController } from "./rpc-enhance-prompt";
 import { RpcGoalController } from "./rpc-goal";
 import { RpcPlanController } from "./rpc-plan";
 import { RpcLiveBridge, type RpcLiveSessionFactory } from "./rpc-live";
@@ -92,6 +94,7 @@ import { RpcSubagentRegistry, readRpcSubagentTranscript, resolveOwnedLiveSubagen
 import type {
 	RpcAbortAndRestoreQueueResult,
 	RpcAsyncJob,
+	RpcSessionSkills,
 	RpcCommand,
 	RpcExtensionUIRequest,
 	RpcExtensionUIResponse,
@@ -426,6 +429,10 @@ const BACKGROUND_COMMANDS: ReadonlySet<string> = new Set<RpcCommand["type"]>([
 	"predict_word",
 	"live_start",
 	"btw_cancel",
+	"ask_selection",
+	"ask_selection_cancel",
+	"enhance_prompt",
+	"enhance_prompt_cancel",
 ]);
 
 /**
@@ -943,6 +950,23 @@ export function handleRpcGetAsyncJobs(
 	});
 }
 
+/** Handle RPC `get_skills`: every discovered skill, marked off when the session switched it off. */
+export function handleRpcGetSkills(
+	session: Pick<AgentSession, "discoveredSkills" | "sessionDisabledSkills" | "skillsEditable">,
+): RpcSessionSkills {
+	const disabled = session.sessionDisabledSkills;
+	return {
+		skills: session.discoveredSkills.map(skill => ({
+			name: skill.name,
+			description: skill.description,
+			source: skill.source,
+			filePath: skill.filePath,
+			enabled: !disabled.has(skill.name),
+		})),
+		editable: session.skillsEditable,
+	};
+}
+
 export async function handleRpcSessionChange(
 	session: RpcSessionChangeSession,
 	command: RpcSessionChangeCommand,
@@ -1413,6 +1437,24 @@ export function registerRpcPersistenceSurface(
 	};
 }
 
+/**
+ * Write a fresh session to disk at its first user message instead of at the
+ * first assistant reply. Hosts list sessions from their files, so a chat whose
+ * model is still thinking would otherwise be missing from their history. A
+ * failed write is latched by the store and reported by
+ * {@link registerRpcPersistenceSurface}.
+ */
+export function registerRpcPromptMaterialization(
+	session: Pick<AgentSession, "subscribe" | "sessionManager">,
+): () => void {
+	return session.subscribe(event => {
+		if (event.type !== "message_end" || event.message.role !== "user") return;
+		session.sessionManager.ensureOnDisk().catch(error => {
+			logger.warn("Could not write the session at its first prompt", { error: toError(error).message });
+		});
+	});
+}
+
 /** Startup options for {@link runRpcMode}. */
 export interface RpcModeOptions {
 	/** `--mode rpc-ui`: route tool UI (e.g. ask) over the protocol, independently of headless extensions. */
@@ -1491,6 +1533,10 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 	const extensionUserMessageTracker = new RpcExtensionUserMessageTracker();
 	const wordPredictor = new RpcWordPredictor();
 	const btw = new RpcBtwController(session, output);
+	// Answers stream for as long as the model writes: backgrounded, and cancelled at exit.
+	const askSelection = new RpcAskSelectionController(session, output);
+	// One rewrite proposal per request: backgrounded beside prompts, and cancelled at exit.
+	const enhancePrompt = new RpcEnhancePromptController(session);
 	// A continuation abandoned while waiting leaves nothing to end the activity stretch: re-check settlement.
 	const goalController = new RpcGoalController(session, () => void settleWatcher.check());
 	// A scheduled or held goal turn will start a turn: every settle report treats it as busy,
@@ -1785,6 +1831,7 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 			persistenceFailure = error;
 		},
 	);
+	registerRpcPromptMaterialization(session);
 	// Titles also change outside slash commands (auto-titling, `set_session_name`); hosts listing sessions follow them.
 	session.sessionManager.onSessionNameChanged(() => {
 		output({ type: "session_info_update", title: session.sessionName, sessionId: session.sessionId });
@@ -2241,6 +2288,31 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 
 			case "get_available_commands": {
 				return success(id, "get_available_commands", { commands: await getAvailableCommands() });
+			}
+
+			case "get_skills": {
+				return success(id, "get_skills", handleRpcGetSkills(session));
+			}
+
+			case "set_disabled_skills": {
+				if (!Array.isArray(command.names) || command.names.some(name => typeof name !== "string")) {
+					return error(id, "set_disabled_skills", "set_disabled_skills requires string[] names");
+				}
+				if (!session.skillsEditable) {
+					return error(
+						id,
+						"set_disabled_skills",
+						"Skills can only be switched off before the first prompt of the session.",
+						"skills_locked",
+					);
+				}
+				await session.setSessionDisabledSkills(command.names);
+				return success(id, "set_disabled_skills", handleRpcGetSkills(session));
+			}
+
+			case "reload_skills": {
+				await session.refreshSkillsAndCommands();
+				return success(id, "reload_skills", handleRpcGetSkills(session));
 			}
 
 			case "get_entries": {
@@ -2789,6 +2861,26 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 				return success(id, "get_btw_history", { records: await btw.history() });
 
 			// =================================================================
+			// "Ask something" about selected answer text
+			// =================================================================
+
+			case "ask_selection": {
+				const result = await askSelection.ask(command);
+				return success(id, "ask_selection", result);
+			}
+
+			case "ask_selection_cancel":
+				return success(id, "ask_selection_cancel", { cancelled: askSelection.cancel(command.askId) });
+
+			case "enhance_prompt": {
+				const result = await enhancePrompt.enhance(command);
+				return success(id, "enhance_prompt", result);
+			}
+
+			case "enhance_prompt_cancel":
+				return success(id, "enhance_prompt_cancel", { cancelled: enhancePrompt.cancel(command.requestId) });
+
+			// =================================================================
 			// Word prediction
 			// =================================================================
 
@@ -2886,6 +2978,8 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 	hostUriBridge.clear("RPC client disconnected before host URI request completed");
 	await liveBridge.stop();
 	dictation.cancel();
+	askSelection.cancelAll();
+	enhancePrompt.cancelAll();
 	await inputDispatcher.drain();
 	await shutdownCoordinator.drain();
 	subagentRegistry?.dispose();

@@ -153,6 +153,12 @@ _ASYNC_JOB_STATUS_VALUES: Final[frozenset[str]] = frozenset({"running", "complet
 _decode_async_job_status = cast("Decoder[AsyncJobStatus]", literal(_ASYNC_JOB_STATUS_VALUES))
 
 
+EnhancePromptStatus: TypeAlias = Literal["improved", "unchanged", "invalid"]
+"""`improved`: a rewrite is proposed; `unchanged`: the draft is already clear; `invalid`: the model's output was unusable or altered literal text."""
+_ENHANCE_PROMPT_STATUS_VALUES: Final[frozenset[str]] = frozenset({"improved", "unchanged", "invalid"})
+_decode_enhance_prompt_status = cast("Decoder[EnhancePromptStatus]", literal(_ENHANCE_PROMPT_STATUS_VALUES))
+
+
 BtwStatus: TypeAlias = Literal["running", "complete", "cancelled", "error", "interrupted"]
 """Side-question turn lifecycle; `interrupted` marks a turn whose process died while it ran."""
 _BTW_STATUS_VALUES: Final[frozenset[str]] = frozenset({"running", "complete", "cancelled", "error", "interrupted"})
@@ -974,6 +980,49 @@ class AsyncJob:
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
+class SessionSkill:
+    """One skill discovered for the session."""
+    name: str
+    """Name the skill is invoked by (`/skill:<name>`, `skill://<name>`)."""
+    description: str
+    source: str
+    """Where it was discovered, as `<provider>:<level>` (e.g. `native:user`, `claude:project`)."""
+    file_path: str
+    """Path of its `SKILL.md`."""
+    enabled: bool
+    """False when the session switched it off."""
+
+
+@dataclass(slots=True, frozen=True, kw_only=True)
+class SessionSkills:
+    """The session's skills and whether they can still be switched off."""
+    skills: tuple[SessionSkill, ...]
+    """Every discovered skill, switched-off ones included, in discovery order."""
+    editable: bool
+    """Whether `set_disabled_skills` is accepted: true until the session has its first message."""
+
+
+@dataclass(slots=True, frozen=True, kw_only=True)
+class AskSelectionTurn:
+    """One earlier question about the same selection and its answer."""
+    question: str
+    answer: str
+
+
+@dataclass(slots=True, frozen=True, kw_only=True)
+class EnhancePromptContext:
+    """Editor context sent with `enhance_prompt`."""
+    no_workspace: bool | None = None
+    """The chat has no workspace: no repository or editor context is used."""
+    active_file: str | None = None
+    """Workspace-relative path of the active editor."""
+    selection: str | None = None
+    """The active editor's selection, capped by the host to 40 lines."""
+    mentions: tuple[str, ...] | None = None
+    """Paths of the draft's `@` mentions."""
+
+
+@dataclass(slots=True, frozen=True, kw_only=True)
 class BtwHistoryTurn:
     """One question and its answer within a side-question topic."""
     question: str
@@ -1471,6 +1520,14 @@ class BtwRecordEvent:
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
+class AskSelectionDeltaEvent:
+    """Text appended to the answer of the running `ask_selection` question `askId`."""
+    type: Literal["ask_selection_delta"] = "ask_selection_delta"
+    ask_id: str
+    delta: str
+
+
+@dataclass(slots=True, frozen=True, kw_only=True)
 class CommandOutputEvent:
     """Output of a builtin slash command."""
     type: Literal["command_output"] = "command_output"
@@ -1718,6 +1775,30 @@ class LogoutResult:
     remaining_source: str | None = None
 
 
+@dataclass(slots=True, frozen=True, kw_only=True)
+class AskSelectionResult:
+    answer: str
+    model: str
+    """`provider/id` of the model that answered."""
+
+
+@dataclass(slots=True, frozen=True, kw_only=True)
+class EnhancePromptResult:
+    status: EnhancePromptStatus
+    prompt: str
+    """The proposed text; equals `draft` when `unchanged` or `invalid`."""
+    changes: tuple[str, ...]
+    """Up to four short bullets describing the edits, in the draft's language."""
+    ambiguities: tuple[str, ...]
+    """Ambiguities the rewrite noticed but did not resolve, in the draft's language."""
+    length_warning: bool
+    """The proposal is more than 2.5× the draft's length."""
+    model: str
+    """`provider/id` of the model that rewrote the draft."""
+    invalid_reason: str | None = None
+    """Why the proposal was rejected (English); set only when `status` is `invalid`."""
+
+
 UserContent: TypeAlias = TextContent | ImageContent
 
 
@@ -1740,7 +1821,7 @@ RpcAgentEvent: TypeAlias = AgentStartEvent | AgentEndEvent | TurnStartEvent | Tu
 """A session event, discriminated by `type`; `set_event_filter` selects which are sent."""
 
 
-RpcNotification: TypeAlias = ReadyEvent | PromptResultEvent | SessionSettledEvent | ExtensionError | ExtensionUiRequest | AvailableCommandsUpdateEvent | SubagentLifecycleEvent | SubagentProgressEvent | SubagentEvent | LivePhaseEvent | LiveLevelsEvent | LiveTranscriptEvent | LiveEndEvent | DictationStateEvent | BtwDeltaEvent | BtwRecordEvent | CommandOutputEvent | SessionInfoUpdateEvent | ConfigUpdateEvent | RpcFrameErrorEvent | RpcAgentEvent | UnknownNotification
+RpcNotification: TypeAlias = ReadyEvent | PromptResultEvent | SessionSettledEvent | ExtensionError | ExtensionUiRequest | AvailableCommandsUpdateEvent | SubagentLifecycleEvent | SubagentProgressEvent | SubagentEvent | LivePhaseEvent | LiveLevelsEvent | LiveTranscriptEvent | LiveEndEvent | DictationStateEvent | BtwDeltaEvent | BtwRecordEvent | AskSelectionDeltaEvent | CommandOutputEvent | SessionInfoUpdateEvent | ConfigUpdateEvent | RpcFrameErrorEvent | RpcAgentEvent | UnknownNotification
 """Unsolicited outbound frame (everything except responses and host tool/URI requests), discriminated by `type`."""
 
 
@@ -2378,6 +2459,43 @@ def parse_async_job(value: object, path: str = "AsyncJob") -> AsyncJob:
     )
 
 
+def parse_session_skill(value: object, path: str = "SessionSkill") -> SessionSkill:
+    payload = expect_object(value, path)
+    return SessionSkill(
+        name=required(payload, "name", decode_str, path),
+        description=required(payload, "description", decode_str, path),
+        source=required(payload, "source", decode_str, path),
+        file_path=required(payload, "filePath", decode_str, path),
+        enabled=required(payload, "enabled", decode_bool, path),
+    )
+
+
+def parse_session_skills(value: object, path: str = "SessionSkills") -> SessionSkills:
+    payload = expect_object(value, path)
+    return SessionSkills(
+        skills=required(payload, "skills", array(parse_session_skill), path),
+        editable=required(payload, "editable", decode_bool, path),
+    )
+
+
+def parse_ask_selection_turn(value: object, path: str = "AskSelectionTurn") -> AskSelectionTurn:
+    payload = expect_object(value, path)
+    return AskSelectionTurn(
+        question=required(payload, "question", decode_str, path),
+        answer=required(payload, "answer", decode_str, path),
+    )
+
+
+def parse_enhance_prompt_context(value: object, path: str = "EnhancePromptContext") -> EnhancePromptContext:
+    payload = expect_object(value, path)
+    return EnhancePromptContext(
+        no_workspace=optional(payload, "noWorkspace", decode_bool, path),
+        active_file=optional(payload, "activeFile", decode_str, path),
+        selection=optional(payload, "selection", decode_str, path),
+        mentions=optional(payload, "mentions", array(decode_str), path),
+    )
+
+
 def parse_btw_history_turn(value: object, path: str = "BtwHistoryTurn") -> BtwHistoryTurn:
     payload = expect_object(value, path)
     return BtwHistoryTurn(
@@ -2942,6 +3060,15 @@ def parse_btw_record_event(value: object, path: str = "BtwRecordEvent") -> BtwRe
     )
 
 
+def parse_ask_selection_delta_event(value: object, path: str = "AskSelectionDeltaEvent") -> AskSelectionDeltaEvent:
+    payload = expect_object(value, path)
+    required(payload, "type", cast('Decoder[Literal["ask_selection_delta"]]', literal(frozenset({"ask_selection_delta"}))), path)
+    return AskSelectionDeltaEvent(
+        ask_id=required(payload, "askId", decode_str, path),
+        delta=required(payload, "delta", decode_str, path),
+    )
+
+
 def parse_command_output_event(value: object, path: str = "CommandOutputEvent") -> CommandOutputEvent:
     payload = expect_object(value, path)
     required(payload, "type", cast('Decoder[Literal["command_output"]]', literal(frozenset({"command_output"}))), path)
@@ -3232,6 +3359,27 @@ def parse_logout_result(value: object, path: str = "LogoutResult") -> LogoutResu
     )
 
 
+def parse_ask_selection_result(value: object, path: str = "AskSelectionResult") -> AskSelectionResult:
+    payload = expect_object(value, path)
+    return AskSelectionResult(
+        answer=required(payload, "answer", decode_str, path),
+        model=required(payload, "model", decode_str, path),
+    )
+
+
+def parse_enhance_prompt_result(value: object, path: str = "EnhancePromptResult") -> EnhancePromptResult:
+    payload = expect_object(value, path)
+    return EnhancePromptResult(
+        status=required(payload, "status", _decode_enhance_prompt_status, path),
+        prompt=required(payload, "prompt", decode_str, path),
+        changes=required(payload, "changes", array(decode_str), path),
+        ambiguities=required(payload, "ambiguities", array(decode_str), path),
+        length_warning=required(payload, "lengthWarning", decode_bool, path),
+        model=required(payload, "model", decode_str, path),
+        invalid_reason=optional(payload, "invalidReason", decode_str, path),
+    )
+
+
 def parse_usage_limit_state(value: object, path: str = "UsageLimitState") -> UsageLimitState:
     return dispatch("stage", _USAGE_LIMIT_STATE_CASES)(value, path)
 
@@ -3308,6 +3456,7 @@ _RPC_NOTIFICATION_CASES: Final[dict[str, Decoder[RpcNotification]]] = {
         "dictation_state": parse_dictation_state_event,
         "btw_delta": parse_btw_delta_event,
         "btw_record": parse_btw_record_event,
+        "ask_selection_delta": parse_ask_selection_delta_event,
         "command_output": parse_command_output_event,
         "session_info_update": parse_session_info_update_event,
         "config_update": parse_config_update_event,
@@ -3463,6 +3612,22 @@ class WireClient:
         """List the slash-command catalog."""
         params: dict[str, object] = {}
         return required(expect_object(self._command("get_available_commands", params), "get_available_commands"), "commands", array(parse_available_slash_command), "get_available_commands")
+
+    def get_skills(self) -> SessionSkills:
+        """List the session's skills, switched-off ones included, and whether they can still be switched off."""
+        params: dict[str, object] = {}
+        return parse_session_skills(self._command("get_skills", params), "get_skills")
+
+    def set_disabled_skills(self, names: Sequence[str]) -> SessionSkills:
+        """Switch the named skills off for this session only (an empty list turns every skill back on); recorded in the session so a resume keeps them off. Fails with `skills_locked` once the session has its first message. Returns the resulting skills."""
+        params: dict[str, object] = {}
+        params["names"] = list(names)
+        return parse_session_skills(self._command("set_disabled_skills", params), "set_disabled_skills")
+
+    def reload_skills(self) -> SessionSkills:
+        """Rediscover skills and file slash commands from disk (e.g. after a skill was added), rebuild the system prompt, and return the resulting skills."""
+        params: dict[str, object] = {}
+        return parse_session_skills(self._command("reload_skills", params), "reload_skills")
 
     def get_entries(self, since: str | None = None) -> SessionEntries:
         """Read the append-history; with `since`, only entries strictly after that durable entry id."""
@@ -3810,6 +3975,35 @@ class WireClient:
         params: dict[str, object] = {}
         return required(expect_object(self._command("get_btw_history", params), "get_btw_history"), "records", array(parse_btw_history_record), "get_btw_history")
 
+    def ask_selection(self, ask_id: str, selection: str, question: str, *, answer: str | None = None) -> AskSelectionResult:
+        """Ask the `ask` model role (the session model when unset) about text selected in an answer, outside the session: nothing is recorded and Unicaja's LiteLLM gateway gets `"no-log": true`. The answer streams as `ask_selection_delta` frames for `askId`; the response carries it whole once complete."""
+        params: dict[str, object] = {}
+        params["askId"] = ask_id
+        params["selection"] = selection
+        params["question"] = question
+        if answer is not None:
+            params["answer"] = answer
+        return parse_ask_selection_result(self._command("ask_selection", params, timeout=600), "ask_selection")
+
+    def ask_selection_cancel(self, ask_id: str) -> bool:
+        """Stop the running `ask_selection` question `askId` (it then fails); false when none matches."""
+        params: dict[str, object] = {}
+        params["askId"] = ask_id
+        return required(expect_object(self._command("ask_selection_cancel", params), "ask_selection_cancel"), "cancelled", decode_bool, "ask_selection_cancel")
+
+    def enhance_prompt(self, request_id: str, draft: str) -> EnhancePromptResult:
+        """Propose a clearer rewrite of a composer draft on the `enhance` model role (else `smol`, else the session model), outside the session: one tool-less call that never answers or executes the draft, records nothing, and on Unicaja's LiteLLM gateway carries `"no-log": true`. The proposal is never sent; literal tokens of the draft (code, paths, URLs, `@mentions`, a leading `/command`) must survive verbatim or the status is `invalid`."""
+        params: dict[str, object] = {}
+        params["requestId"] = request_id
+        params["draft"] = draft
+        return parse_enhance_prompt_result(self._command("enhance_prompt", params, timeout=120), "enhance_prompt")
+
+    def enhance_prompt_cancel(self, request_id: str) -> bool:
+        """Stop the running `enhance_prompt` request `requestId` (it then fails); false when none matches."""
+        params: dict[str, object] = {}
+        params["requestId"] = request_id
+        return required(expect_object(self._command("enhance_prompt_cancel", params), "enhance_prompt_cancel"), "cancelled", decode_bool, "enhance_prompt_cancel")
+
     def on_ready(self, listener: Callable[[ReadyEvent], None]) -> Callable[[], None]:
         """Subscribe to `ready`: First frame after startup; transport fields are absent on servers without protocol v2."""
         return self._listen("ready", listener)
@@ -3873,6 +4067,10 @@ class WireClient:
     def on_btw_record(self, listener: Callable[[BtwRecordEvent], None]) -> Callable[[], None]:
         """Subscribe to `btw_record`: Full side-question record on every lifecycle change (started, complete, cancelled, error); the last one per id wins."""
         return self._listen("btw_record", listener)
+
+    def on_ask_selection_delta(self, listener: Callable[[AskSelectionDeltaEvent], None]) -> Callable[[], None]:
+        """Subscribe to `ask_selection_delta`: Text appended to the answer of the running `ask_selection` question `askId`."""
+        return self._listen("ask_selection_delta", listener)
 
     def on_command_output(self, listener: Callable[[CommandOutputEvent], None]) -> Callable[[], None]:
         """Subscribe to `command_output`: Output of a builtin slash command."""
@@ -4031,6 +4229,9 @@ __all__ = [
     "AskAnswer",
     "AskOption",
     "AskQuestion",
+    "AskSelectionDeltaEvent",
+    "AskSelectionResult",
+    "AskSelectionTurn",
     "AskUiRequest",
     "AssistantContent",
     "AssistantDoneEvent",
@@ -4092,6 +4293,9 @@ __all__ = [
     "DictationStopResult",
     "EditorUiRequest",
     "Effort",
+    "EnhancePromptContext",
+    "EnhancePromptResult",
+    "EnhancePromptStatus",
     "ExtensionError",
     "ExtensionUiMethod",
     "ExtensionUiRequest",
@@ -4168,6 +4372,8 @@ __all__ = [
     "SessionEntries",
     "SessionInfoUpdateEvent",
     "SessionSettledEvent",
+    "SessionSkill",
+    "SessionSkills",
     "SessionState",
     "SessionStats",
     "SessionTree",
@@ -4236,6 +4442,9 @@ __all__ = [
     "parse_ask_answer",
     "parse_ask_option",
     "parse_ask_question",
+    "parse_ask_selection_delta_event",
+    "parse_ask_selection_result",
+    "parse_ask_selection_turn",
     "parse_ask_ui_request",
     "parse_assistant_content",
     "parse_assistant_done_event",
@@ -4285,6 +4494,8 @@ __all__ = [
     "parse_dictation_state_event",
     "parse_dictation_stop_result",
     "parse_editor_ui_request",
+    "parse_enhance_prompt_context",
+    "parse_enhance_prompt_result",
     "parse_extension_error",
     "parse_extension_ui_request",
     "parse_fallback_content",
@@ -4348,6 +4559,8 @@ __all__ = [
     "parse_session_entries",
     "parse_session_info_update_event",
     "parse_session_settled_event",
+    "parse_session_skill",
+    "parse_session_skills",
     "parse_session_state",
     "parse_session_stats",
     "parse_session_tree",

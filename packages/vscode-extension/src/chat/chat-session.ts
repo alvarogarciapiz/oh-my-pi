@@ -14,7 +14,7 @@ import * as vscode from "vscode";
 import type { SessionState } from "@oh-my-pi/pi-coding-agent/modes/rpc/wire/rpc-wire.generated";
 import { agentDir, readConfig, workspaceCwd } from "../config";
 import type { AgentStatus, ChatRequest, ChatUpdate, ModelChoice } from "../protocol";
-import { OmpCommandError, type OmpProcess } from "../rpc/omp-process";
+import { OmpCommandError, type OmpParams, type OmpProcess } from "../rpc/omp-process";
 import { renameStoredSession } from "../sessions/rename";
 import { sessionSearch } from "../sessions/session-search";
 import { guessSessionDir, listSessions, sessionLabel } from "../sessions/session-store";
@@ -47,6 +47,8 @@ export interface ChatSurface {
 /** Shown before the view has a process (it gets one as soon as it opens). */
 const NO_PROCESS: AgentStatus = { phase: "starting" };
 const NO_STATUS_TEXTS: ReadonlyMap<string, string> = new Map();
+/** How long "Mejora aplicada…" stays before fading out: a confirmation, nothing to act on. */
+const APPLIED_NOTICE_MS = 2000;
 
 export class ChatSession implements vscode.Disposable, HostView {
 	#host: AgentHost | undefined;
@@ -62,6 +64,8 @@ export class ChatSession implements vscode.Disposable, HostView {
 	readonly #disposables: vscode.Disposable[] = [];
 	/** The composer's `@` search over the workspace. */
 	readonly #mentionSearch = new WorkspaceMentionSearch();
+	/** "Mejorar prompt" requests on their way: the host each went to, and whether the webview stopped it (its failure is then reported as cancelled). */
+	readonly #enhancements = new Map<string, { host: AgentHost; cancelled: boolean }>();
 	readonly #onDidChange = new vscode.EventEmitter<ChatSession>();
 	/** Fires when the shown session, its process, title, model, or busy state changes. */
 	readonly onDidChange = this.#onDidChange.event;
@@ -160,9 +164,14 @@ export class ChatSession implements vscode.Disposable, HostView {
 		previous?.detach(this);
 		this.#host = host;
 		host.attach(this);
+		let curating = host.curating;
 		this.#hostSubscription = host.onDidChange(() => {
 			this.#markShownRead(host);
 			this.#postProposals(false);
+			// A finished review may have written proposals: re-read them rather than wait on the
+			// file watcher, which VS Code may not run for omp's folder outside the workspace.
+			if (curating && !host.curating) void this.proposals.refresh();
+			curating = host.curating;
 			this.#onDidChange.fire(this);
 		});
 		this.#shownSessionFile = undefined;
@@ -188,6 +197,9 @@ export class ChatSession implements vscode.Disposable, HostView {
 		if (!this.#webviewReady) return;
 		const sessionFile = this.#host?.sessionFile;
 		if (!force && sessionFile === this.#proposalsSessionFile) return;
+		// Another session is shown: catch up with proposals written since the last read
+		// (by another process or window); the refresh posts again when they changed.
+		if (!force) void this.proposals.refresh();
 		this.#proposalsSessionFile = sessionFile;
 		const proposals = sessionFile
 			? this.proposals.proposals.filter(proposal => proposal.sessionFile === sessionFile)
@@ -366,9 +378,10 @@ export class ChatSession implements vscode.Disposable, HostView {
 		return host;
 	}
 
-	#notice(level: "info" | "warning" | "error", message: string): void {
+	/** A banner in the chat; with `durationMs` it fades out on its own after that long. */
+	#notice(level: "info" | "warning" | "error", message: string, durationMs?: number): void {
 		this.log.appendLine(`[${level}] ${message}`);
-		this.post({ type: "notice", level, message });
+		this.post({ type: "notice", level, message, durationMs });
 	}
 
 	/** Voice input: omp records the microphone and transcribes it; the webview shows the state. */
@@ -526,6 +539,8 @@ export class ChatSession implements vscode.Disposable, HostView {
 				this.surface.openInNewTab(request.noWorkspace);
 				return;
 			case "listSessions":
+				// The rows' proposal marks come with the refresh (`sessionProposals`).
+				void this.proposals.refresh();
 				await this.#postSessions();
 				return;
 			case "searchSessions": {
@@ -589,6 +604,15 @@ export class ChatSession implements vscode.Disposable, HostView {
 			case "cancelAsyncJob":
 				await this.#requireHost().cancelAsyncJob(request.id);
 				return;
+			case "getSkills":
+				await this.#host?.refreshSkills([this]);
+				return;
+			case "setDisabledSkills":
+				await this.#requireHost().setDisabledSkills(request.names);
+				return;
+			case "importSkills":
+				await this.#requireHost().importSkills();
+				return;
 			case "watchSubagent":
 				this.#host?.watchSubagent(request.id);
 				return;
@@ -609,6 +633,52 @@ export class ChatSession implements vscode.Disposable, HostView {
 			case "predictWordFeedback":
 				this.#host?.predictWordFeedback(request.text, request.cursor, request.suggestion, request.accepted);
 				return;
+			case "askSelection": {
+				const { askId, selection, answer, question, history } = request;
+				try {
+					const result = await this.#requireHost().askSelection(
+						{ askId, selection, answer, question, history },
+						delta => this.post({ type: "askSelectionDelta", askId, delta }),
+					);
+					this.post({ type: "askSelectionDone", askId, answer: result.answer, model: result.model });
+				} catch (error) {
+					this.post({ type: "askSelectionDone", askId, error: errorMessage(error) });
+				}
+				return;
+			}
+			case "askSelectionCancel":
+				this.#host?.cancelAskSelection(request.askId);
+				return;
+			case "enhancePrompt": {
+				const { requestId, draft, mentions } = request;
+				try {
+					const host = this.#requireHost();
+					this.#enhancements.set(requestId, { host, cancelled: false });
+					const result = await host.enhancePrompt({
+						requestId,
+						draft,
+						context: enhancePromptContext(host.noWorkspace, mentions),
+					});
+					this.post({ type: "enhancePromptResult", requestId, result });
+				} catch (error) {
+					this.post({
+						type: "enhancePromptError",
+						requestId,
+						message: errorMessage(error),
+						cancelled: this.#enhancements.get(requestId)?.cancelled === true,
+					});
+				} finally {
+					this.#enhancements.delete(requestId);
+				}
+				return;
+			}
+			case "enhancePromptCancel": {
+				const running = this.#enhancements.get(request.requestId);
+				if (!running) return;
+				running.cancelled = true;
+				running.host.cancelEnhancePrompt(request.requestId);
+				return;
+			}
 			case "compact":
 				await this.compact();
 				return;
@@ -642,19 +712,29 @@ export class ChatSession implements vscode.Disposable, HostView {
 					);
 				}
 				return;
-			case "approveSkillProposal":
+			case "approveSkillProposal": {
+				const skill = this.proposals.proposals.find(proposal => proposal.id === request.id)?.skill;
 				try {
 					await this.proposals.approve(request.id);
-					this.#notice("info", "Skill proposal applied.");
+					this.#notice(
+						"info",
+						skill ? `Mejora aplicada a la skill «${skill}».` : "Mejora de skill aplicada.",
+						APPLIED_NOTICE_MS,
+					);
 				} catch (error) {
-					this.#notice("error", `Could not apply the proposal: ${errorMessage(error)}`);
+					this.#notice("error", `No se pudo aplicar la mejora: ${errorMessage(error)}`);
+					// The skills panel waits on its buttons until the proposals come back.
+					this.#postProposals(true);
 				}
 				return;
+			}
 			case "rejectSkillProposal":
 				try {
-					await this.proposals.reject(request.id);
+					// Dismissing the reason box keeps the proposal: its buttons come back.
+					if (!(await this.proposals.reject(request.id))) this.#postProposals(true);
 				} catch (error) {
-					this.#notice("error", `Could not reject the proposal: ${errorMessage(error)}`);
+					this.#notice("error", `No se pudo rechazar la mejora: ${errorMessage(error)}`);
+					this.#postProposals(true);
 				}
 				return;
 			case "openSkillProposalDiff":
@@ -677,6 +757,25 @@ export class ChatSession implements vscode.Disposable, HostView {
 				return;
 		}
 	}
+}
+
+/** Lines of the editor selection "Mejorar prompt" sends as context. */
+const ENHANCE_SELECTION_MAX_LINES = 40;
+
+/**
+ * What "Mejorar prompt" knows besides the draft: the draft's `@` mentions and, in a chat
+ * with a workspace, the active editor's file (workspace-relative) and its selection.
+ */
+function enhancePromptContext(noWorkspace: boolean, mentions: string[]): OmpParams<"enhance_prompt">["context"] {
+	const shared = mentions.length > 0 ? { mentions } : {};
+	if (noWorkspace) return { noWorkspace: true, ...shared };
+	const editor = vscode.window.activeTextEditor;
+	if (editor?.document.uri.scheme !== "file") return shared;
+	const activeFile = vscode.workspace.asRelativePath(editor.document.uri, false);
+	const selected = editor.selection.isEmpty ? "" : editor.document.getText(editor.selection);
+	if (selected.trim() === "") return { activeFile, ...shared };
+	const selection = selected.split("\n").slice(0, ENHANCE_SELECTION_MAX_LINES).join("\n");
+	return { activeFile, selection, ...shared };
 }
 
 /**

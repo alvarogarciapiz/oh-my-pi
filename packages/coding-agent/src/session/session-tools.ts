@@ -14,7 +14,13 @@ import { CustomToolAdapter } from "../extensibility/custom-tools/wrapper";
 import type { ExtensionRunner, SourceInfo, ToolInfo } from "../extensibility/extensions";
 import { type EvalPreludeDefinition, evalPreludeSummary } from "../eval/preludes";
 import { ExtensionToolWrapper } from "../extensibility/extensions/wrapper";
-import { loadSkills, type Skill, type SkillWarning, setActiveSkills } from "../extensibility/skills";
+import {
+	loadSkills,
+	type Skill,
+	type SkillWarning,
+	setActiveSkills,
+	setSessionDisabledSkillNames,
+} from "../extensibility/skills";
 import { type LocalProtocolOptions } from "../internal-urls";
 import { stripXdUrlPrefix, XD_URL_PREFIX } from "@oh-my-pi/pi-tui/tools/xd-url";
 import { deduplicateMCPToolsByName, resolveMCPToolAlias } from "../mcp/tool-bridge";
@@ -134,7 +140,10 @@ interface SessionToolsOptions {
 	xdev?: XdevState;
 	setActiveToolNames?: (names: Iterable<string>) => void;
 	baseSystemPrompt: string[];
+	/** Every discovered skill, including the ones this session switched off. */
 	skills?: Skill[];
+	/** Names of the skills this session switched off for itself (see {@link SessionTools.setSessionDisabledSkills}). */
+	sessionDisabledSkills?: readonly string[];
 	skillWarnings?: SkillWarning[];
 	skillsSettings?: SkillsSettings;
 	skillsReloadable?: boolean;
@@ -425,6 +434,9 @@ export class SessionTools {
 	readonly #deviceOnlyWriteTransportAvailable: boolean;
 	#ensureGoalRegistered: SessionToolsOptions["ensureGoalRegistered"];
 	#reconcileSettingsGatedTools: SessionToolsOptions["reconcileSettingsGatedTools"];
+	/** Every skill discovery found; `#skills` is this list minus `#sessionDisabledSkills`. */
+	#discoveredSkills: Skill[];
+	#sessionDisabledSkills: ReadonlySet<string>;
 	#skills: Skill[];
 	#skillWarnings: SkillWarning[];
 	#skillsSettings: SkillsSettings | undefined;
@@ -482,7 +494,9 @@ export class SessionTools {
 			restoredReply && restoredPromptDigest
 				? { reply: restoredReply, promptDigest: restoredPromptDigest }
 				: undefined;
-		this.#skills = options.skills ?? [];
+		this.#discoveredSkills = options.skills ?? [];
+		this.#sessionDisabledSkills = new Set(options.sessionDisabledSkills);
+		this.#skills = this.#discoveredSkills.filter(skill => !this.#sessionDisabledSkills.has(skill.name));
 		this.#skillWarnings = options.skillWarnings ?? [];
 		this.#skillsSettings = options.skillsSettings;
 		this.#skillsReloadable = options.skillsReloadable ?? true;
@@ -551,6 +565,34 @@ export class SessionTools {
 	/** Skills currently rendered into the system prompt. */
 	get skills(): Skill[] {
 		return this.#skills;
+	}
+
+	/** Every discovered skill, including the ones this session switched off. */
+	get discoveredSkills(): readonly Skill[] {
+		return this.#discoveredSkills;
+	}
+
+	/** Names of the skills this session switched off for itself. */
+	get sessionDisabledSkills(): ReadonlySet<string> {
+		return this.#sessionDisabledSkills;
+	}
+
+	/**
+	 * Switches the named skills off for this session only (an empty list turns
+	 * every skill back on). Updates the skill list and `skill://` resolution;
+	 * callers rebuild the base system prompt.
+	 */
+	setSessionDisabledSkills(names: Iterable<string>): void {
+		this.#sessionDisabledSkills = new Set(names);
+		this.#applySessionSkillFilter();
+	}
+
+	#applySessionSkillFilter(): void {
+		this.#skills = this.#discoveredSkills.filter(skill => !this.#sessionDisabledSkills.has(skill.name));
+		if (this.#host.agentKind() === "main") {
+			setActiveSkills(this.#skills);
+			setSessionDisabledSkillNames(this.#sessionDisabledSkills);
+		}
 	}
 
 	/** Diagnostics produced while loading the current skills. */
@@ -1919,13 +1961,10 @@ export class SessionTools {
 				disabledExtensions: cfgDisabledExtensions.get(this.#host.settings),
 				extensionRoots: this.#host.effectiveExtensionRoots(),
 			});
-			this.#skills = discovered.skills;
+			this.#discoveredSkills = discovered.skills;
 			this.#skillWarnings = discovered.warnings;
 			this.#skillsSettings = skillsSettings;
-
-			if (this.#host.agentKind() === "main") {
-				setActiveSkills(this.#skills);
-			}
+			this.#applySessionSkillFilter();
 		}
 		await this.refreshBaseSystemPrompt();
 		this.#host.notifyCommandMetadataChanged();

@@ -230,9 +230,25 @@ export function setActiveSkills(value: readonly Skill[]): void {
 	activeSkills = value;
 }
 
+let sessionDisabledSkillNames: ReadonlySet<string> = new Set();
+
+/**
+ * Process-global names of the skills the active top-level session switched off
+ * for itself. Subagents spawned in this process drop them too.
+ */
+export function getSessionDisabledSkillNames(): ReadonlySet<string> {
+	return sessionDisabledSkillNames;
+}
+
+/** Replace the session-disabled skill names. Called by the top-level session. */
+export function setSessionDisabledSkillNames(value: ReadonlySet<string>): void {
+	sessionDisabledSkillNames = value;
+}
+
 /** Reset the active skill snapshot. Test-only. */
 export function resetActiveSkillsForTests(): void {
 	activeSkills = [];
+	sessionDisabledSkillNames = new Set();
 }
 
 /**

@@ -29,6 +29,7 @@ import {
 import type {
 	RpcAbortAndRestoreQueueResult,
 	RpcAsyncJob,
+	RpcSessionSkills,
 	RpcAvailableCommandsUpdateFrame,
 	RpcBtwDeltaFrame,
 	RpcBtwRecordFrame,
@@ -903,6 +904,24 @@ export class RpcClient {
 	async cancelAsyncJob(jobId: string): Promise<boolean> {
 		const response = await this.#send({ type: "cancel_async_job", jobId });
 		return this.#getData<{ cancelled: boolean }>(response).cancelled;
+	}
+
+	/** The session's skills, switched-off ones included, and whether they can still be switched off. */
+	async getSkills(): Promise<RpcSessionSkills> {
+		const response = await this.#send({ type: "get_skills" });
+		return this.#getData<RpcSessionSkills>(response);
+	}
+
+	/** Switch the named skills off for this session only; rejected once the session has its first message. */
+	async setDisabledSkills(names: string[]): Promise<RpcSessionSkills> {
+		const response = await this.#send({ type: "set_disabled_skills", names });
+		return this.#getData<RpcSessionSkills>(response);
+	}
+
+	/** Rediscover skills from disk and return the resulting skills. */
+	async reloadSkills(): Promise<RpcSessionSkills> {
+		const response = await this.#send({ type: "reload_skills" });
+		return this.#getData<RpcSessionSkills>(response);
 	}
 
 	/**

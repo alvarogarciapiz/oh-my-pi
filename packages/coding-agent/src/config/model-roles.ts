@@ -65,6 +65,8 @@ export const MODEL_ROLES: Record<ModelRole, ModelRoleInfo> = {
 	task: { tag: "TASK", name: "Subtask", color: "muted", section: "chat", accepts: acceptsChat },
 	advisor: { tag: "ADVISOR", name: "Advisor", color: "accent", section: "chat", accepts: acceptsChat },
 	curator: { tag: "CURATOR", name: "Skill curator", color: "dim", section: "chat", accepts: acceptsChat },
+	ask: { tag: "ASK", name: "Ask about selection", color: "dim", section: "chat", accepts: acceptsChat },
+	enhance: { tag: "ENHANCE", name: "Prompt enhancer", color: "dim", section: "chat", accepts: acceptsChat },
 	image: {
 		tag: "IMAGE",
 		name: "Image generation",

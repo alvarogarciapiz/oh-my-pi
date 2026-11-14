@@ -268,86 +268,6 @@ code {
 	height: 36px;
 	padding: 0 8px 0 12px;
 	border-bottom: 1px solid var(--c-border-light);
-	/* Anchors the skill-updates panel. */
-	position: relative;
-}
-
-/* Skill self-improvement beside the title: a spinner while it runs, then a button opening its edits. */
-.curation-spinner {
-	flex: none;
-	width: 12px;
-	height: 12px;
-	border-radius: 9999px;
-	border: 1.5px solid color-mix(in srgb, var(--omp-accent) 30%, transparent);
-	border-top-color: var(--omp-accent);
-	animation: history-spin 0.8s linear infinite;
-}
-
-.curation-spinner[hidden],
-.curation-done[hidden],
-.curation-panel[hidden] {
-	display: none;
-}
-
-.curation-done {
-	flex: none;
-	display: inline-flex;
-	align-items: center;
-	gap: 3px;
-	height: 20px;
-	padding: 0 6px;
-	border-radius: 9999px;
-	border: 1px solid color-mix(in srgb, var(--omp-accent) 55%, transparent);
-	background: color-mix(in srgb, var(--omp-accent) 14%, transparent);
-	color: var(--omp-accent);
-	font-size: var(--fs-sm);
-	font-weight: 600;
-	cursor: pointer;
-	animation: curation-arrive 0.4s ease-out;
-}
-
-.curation-done:hover,
-.curation-done[aria-expanded="true"] {
-	background: color-mix(in srgb, var(--omp-accent) 26%, transparent);
-}
-
-.curation-done .icon {
-	width: 11px;
-	height: 11px;
-}
-
-@keyframes curation-arrive {
-	from {
-		transform: scale(0.6);
-		opacity: 0;
-	}
-}
-
-.curation-panel {
-	position: absolute;
-	top: calc(100% + 4px);
-	left: 8px;
-	right: 8px;
-	z-index: 20;
-	max-height: min(60vh, 480px);
-	overflow-y: auto;
-	padding: 8px;
-	border-radius: var(--r-sm);
-	border: 1px solid var(--c-border-heavy);
-	background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
-	box-shadow: 0 4px 16px rgb(0 0 0 / 0.3);
-}
-
-.curation-panel-head {
-	display: flex;
-	align-items: center;
-	gap: 6px;
-	margin-bottom: 6px;
-}
-
-.curation-panel-title {
-	flex: 1;
-	font-weight: 600;
 }
 
 .brand {
@@ -631,10 +551,15 @@ code {
 	font-size: var(--fs-sm);
 }
 
-/* Floats at the end of text selected in an answer. */
-.selection-reply {
+/* Float at the end of text selected in an answer: "Reply" and "Ask something". */
+.selection-actions {
 	position: absolute;
 	z-index: 5;
+	display: inline-flex;
+	gap: 4px;
+}
+
+.selection-reply {
 	display: inline-flex;
 	align-items: center;
 	gap: 4px;
@@ -645,6 +570,7 @@ code {
 	background: var(--menu-bg);
 	color: var(--c-fg);
 	font-size: var(--fs-sm);
+	white-space: nowrap;
 	box-shadow: 0 2px 8px rgb(0 0 0 / 0.25);
 	cursor: pointer;
 }
@@ -1702,18 +1628,12 @@ code {
 	line-height: 18px;
 }
 
-/* Revert button under the diff of a `skill-update` notice; Approve / Reject / Open diff under a skill proposal. */
+/* Revert button under the diff of a `skill-update` notice. */
 .skill-update-actions {
 	display: flex;
 	justify-content: flex-end;
 	gap: 6px;
 	margin-top: 6px;
-}
-
-.skill-proposal-reason {
-	margin: 0 0 6px;
-	color: var(--c-fg-2);
-	white-space: pre-wrap;
 }
 
 .diff-add {
@@ -2028,7 +1948,7 @@ code {
 	gap: 2px;
 	margin-top: 14px;
 	width: 100%;
-	max-width: 360px;
+	max-width: 480px;
 }
 
 .example {
@@ -2460,29 +2380,23 @@ code {
 	flex: none;
 }
 
-/* Skill proposals awaiting a decision, counted in the header's curation color; shown only while the row is hovered. */
+/* Thin green book on a chat with skill proposals awaiting a decision; shown only while its row or card is hovered. */
 .history-curation {
 	flex: none;
 	display: inline-flex;
 	align-items: center;
-	gap: 3px;
-	height: 16px;
-	padding: 0 5px;
-	border-radius: 9999px;
-	border: 1px solid color-mix(in srgb, var(--omp-accent) 55%, transparent);
-	background: color-mix(in srgb, var(--omp-accent) 14%, transparent);
 	color: var(--omp-accent);
-	font-size: var(--fs-sm);
-	font-weight: 600;
 }
 
-.history-row:not(:hover) .history-curation {
+.history-row:not(:hover, :focus-within) .history-curation,
+.history-card:not(:hover, :focus-within) .history-curation {
 	display: none;
 }
 
 .history-curation .icon {
-	width: 10px;
-	height: 10px;
+	width: 13px;
+	height: 13px;
+	stroke-width: 1.5;
 }
 
 /* Rename pencil and delete trash of a history row, shown on hover or when the row is selected. */
@@ -3221,6 +3135,12 @@ code {
 	font-size: var(--fs-sm);
 }
 
+/* A self-dismissing notice fades out before it is removed (NOTICE_FADE_MS in composer.ts). */
+.notice.fading {
+	opacity: 0;
+	transition: opacity 400ms ease;
+}
+
 .notice.warning {
 	border-color: color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 40%, transparent);
 }
@@ -3235,6 +3155,21 @@ code {
 	min-width: 0;
 	white-space: pre-wrap;
 	overflow-wrap: anywhere;
+}
+
+/* A notice's own action (Deshacer), a link-like button before its close. */
+.notice-action {
+	flex: none;
+	padding: 0 4px;
+	border: none;
+	background: none;
+	color: var(--vscode-textLink-foreground, var(--c-open));
+	font-size: var(--fs-sm);
+	line-height: 1.2;
+}
+
+.notice-action:hover {
+	text-decoration: underline;
 }
 
 .notice-close,
@@ -3530,6 +3465,11 @@ code {
 	color: var(--vscode-input-placeholderForeground, var(--c-fg-3));
 }
 
+/* While "Mejorar prompt" works on the draft it stays visible but cannot be edited. */
+.input[readonly] {
+	opacity: 0.6;
+}
+
 /* The typed-out ideas stay on one line, so the composer never changes height while they animate. */
 .input.typewriter::placeholder {
 	white-space: nowrap;
@@ -3601,6 +3541,36 @@ code {
 .delegate-toggle[aria-pressed="true"] {
 	background: var(--c-hover);
 	color: var(--omp-accent);
+}
+
+/* "Mejorar prompt": sparkles left of the microphone; while it works the sparkles turn. */
+.enhance-prompt-toggle {
+	width: 28px;
+	height: 28px;
+	border-radius: 9999px;
+}
+
+.enhance-prompt-toggle:disabled {
+	opacity: 0.4;
+	cursor: default;
+}
+
+.enhance-prompt-toggle:disabled:hover {
+	background: none;
+}
+
+.enhance-prompt-toggle.running {
+	color: var(--omp-accent);
+}
+
+.enhance-prompt-toggle.running .icon {
+	animation: history-spin 1.2s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.enhance-prompt-toggle.running .icon {
+		animation: dictation-pulse 1.2s ease-in-out infinite;
+	}
 }
 
 /* Voice input: the microphone button, red and pulsing while recording, with the elapsed time beside it. */
@@ -4193,6 +4163,801 @@ code {
 .context-action:disabled {
 	opacity: 0.5;
 	cursor: default;
+}
+
+/* Skills: composer button right of the context ring, plus its popover listing the session's skills */
+
+/* Static: the popover anchors to the composer card, so it never runs off the left of a narrow sidebar. */
+.skills {
+	display: flex;
+}
+
+.skills-toggle {
+	position: relative;
+	width: 28px;
+	height: 28px;
+	border-radius: 9999px;
+}
+
+.skills-toggle[aria-expanded="true"] {
+	background: var(--c-hover);
+	color: var(--c-fg);
+}
+
+.skills-badge {
+	position: absolute;
+	top: 1px;
+	right: 0;
+	min-width: 14px;
+	height: 14px;
+	padding: 0 3px;
+	border-radius: 9999px;
+	background: var(--c-fg-2);
+	color: var(--c-bg);
+	font-size: 9px;
+	font-weight: 600;
+	line-height: 14px;
+	text-align: center;
+	pointer-events: none;
+}
+
+/* Proposals wait for a decision: the badge turns accent and pops in when one arrives. */
+.skills-badge.proposals {
+	background: var(--omp-accent);
+	color: var(--omp-accent-fg);
+}
+
+.skills-badge.arrived {
+	animation: skills-badge-arrive 0.5s ease-out;
+}
+
+@keyframes skills-badge-arrive {
+	0% {
+		transform: scale(0.4);
+		opacity: 0;
+	}
+	60% {
+		transform: scale(1.25);
+	}
+}
+
+.skills-toggle.has-proposals {
+	color: var(--omp-accent);
+}
+
+/* While omp reviews the task's skills: an accent ring turns around the book. */
+.skills-toggle.curating::before {
+	content: "";
+	position: absolute;
+	inset: 2px;
+	border-radius: 9999px;
+	border: 1.5px solid color-mix(in srgb, var(--omp-accent) 25%, transparent);
+	border-top-color: var(--omp-accent);
+	animation: history-spin 0.9s linear infinite;
+	pointer-events: none;
+}
+
+.skills-popover {
+	position: absolute;
+	right: 0;
+	bottom: calc(100% + 8px);
+	z-index: 10;
+	width: min(100%, 520px);
+	max-height: 70vh;
+	padding: 12px;
+	border-radius: var(--r-xl);
+	border: 1px solid var(--c-border-heavy);
+	background: var(--menu-bg);
+	box-shadow: var(--menu-shadow);
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	font-size: var(--fs-sm);
+	cursor: default;
+}
+
+.skills-header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.skills-mark {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex: none;
+	width: 28px;
+	height: 28px;
+	border-radius: var(--r-md);
+	background: color-mix(in srgb, var(--omp-accent) 16%, transparent);
+	color: var(--omp-accent);
+}
+
+.skills-popover.locked .skills-mark {
+	background: var(--c-surface);
+	color: var(--c-fg-2);
+}
+
+.skills-heading {
+	display: flex;
+	flex-direction: column;
+	flex: 1;
+	min-width: 0;
+}
+
+.skills-title {
+	font-size: var(--fs);
+	font-weight: 500;
+}
+
+.skills-summary {
+	color: var(--c-fg-3);
+	font-variant-numeric: tabular-nums;
+}
+
+.skills-info {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex: none;
+	width: 24px;
+	height: 24px;
+	padding: 0;
+	border: none;
+	border-radius: 9999px;
+	background: transparent;
+	color: var(--c-fg-3);
+}
+
+.skills-info .icon {
+	width: 15px;
+	height: 15px;
+}
+
+.skills-info:hover,
+.skills-info[aria-expanded="true"] {
+	background: var(--c-hover);
+	color: var(--c-fg);
+}
+
+.skills-help {
+	margin: 0;
+	padding: 8px 10px;
+	border-radius: var(--r-md);
+	border-left: 2px solid var(--c-open);
+	background: color-mix(in srgb, var(--c-open) 10%, transparent);
+	color: var(--c-fg);
+	line-height: 1.45;
+}
+
+.skills-banner {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	padding: 8px 10px;
+	border-radius: var(--r-md);
+	line-height: 1.45;
+}
+
+.skills-banner.editable {
+	background: color-mix(in srgb, var(--omp-accent) 9%, transparent);
+	color: var(--c-fg);
+}
+
+.skills-banner.locked {
+	background: var(--c-surface);
+	color: var(--c-fg-2);
+}
+
+.skills-banner .icon {
+	flex: none;
+	width: 14px;
+	height: 14px;
+	margin-top: 2px;
+}
+
+.skills-toolbar {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.skills-filter {
+	flex: 1;
+	min-width: 0;
+	height: 26px;
+	padding: 0 8px;
+	border: 1px solid var(--vscode-input-border, var(--c-border-heavy));
+	border-radius: 9999px;
+	background: var(--vscode-input-background);
+	color: var(--vscode-input-foreground, var(--c-fg));
+	font: inherit;
+	font-size: var(--fs-sm);
+}
+
+.skills-filter:focus {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: -1px;
+}
+
+.skills-bulk {
+	display: flex;
+	gap: 4px;
+	margin-left: auto;
+}
+
+.skills-bulk-button {
+	height: 26px;
+	padding: 0 10px;
+	border: 1px solid var(--c-border-heavy);
+	border-radius: 9999px;
+	background: transparent;
+	color: var(--c-fg);
+	font-size: var(--fs-sm);
+	white-space: nowrap;
+}
+
+.skills-bulk-button:hover:not(:disabled) {
+	background: var(--c-hover);
+}
+
+.skills-bulk-button:disabled {
+	opacity: 0.4;
+	cursor: default;
+}
+
+.skills-list {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	min-height: 0;
+	overflow-y: auto;
+}
+
+.skills-group {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.skills-group-title {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 0 2px;
+	color: var(--c-fg-3);
+	font-size: calc(var(--fs) - 2px);
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+}
+
+.skills-group-count {
+	min-width: 16px;
+	padding: 0 5px;
+	border-radius: 9999px;
+	background: var(--c-surface);
+	font-variant-numeric: tabular-nums;
+	text-align: center;
+}
+
+.skill-row {
+	display: flex;
+	align-items: flex-start;
+	gap: 10px;
+	padding: 8px 10px;
+	border: 1px solid transparent;
+	border-radius: var(--r-md);
+	background: var(--c-surface);
+	transition:
+		opacity 120ms ease,
+		border-color 120ms ease;
+}
+
+.skill-row:hover {
+	border-color: var(--c-border-heavy);
+}
+
+.skill-row.off {
+	opacity: 0.55;
+}
+
+.skill-row.off:hover {
+	opacity: 0.85;
+}
+
+/* A pill switch: green when the skill is on. */
+.skill-switch {
+	position: relative;
+	flex: none;
+	width: 28px;
+	height: 16px;
+	margin-top: 1px;
+	padding: 0;
+	border: none;
+	border-radius: 9999px;
+	background: var(--c-border-heavy);
+	transition: background 120ms ease;
+}
+
+.skill-switch::after {
+	content: "";
+	position: absolute;
+	top: 2px;
+	left: 2px;
+	width: 12px;
+	height: 12px;
+	border-radius: 9999px;
+	background: var(--c-fg-2);
+	transition:
+		transform 120ms ease,
+		background 120ms ease;
+}
+
+.skill-switch[aria-checked="true"] {
+	background: var(--omp-accent);
+}
+
+.skill-switch[aria-checked="true"]::after {
+	transform: translateX(12px);
+	background: var(--omp-accent-fg);
+}
+
+.skill-switch:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: 2px;
+}
+
+.skill-mark {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex: none;
+	width: 18px;
+	height: 18px;
+	border-radius: 9999px;
+	background: var(--c-border-heavy);
+	color: var(--c-fg-2);
+}
+
+.skill-mark.on {
+	background: color-mix(in srgb, var(--omp-accent) 20%, transparent);
+	color: var(--omp-accent);
+}
+
+.skill-mark .icon {
+	width: 11px;
+	height: 11px;
+}
+
+.skill-text {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	flex: 1;
+	min-width: 0;
+}
+
+.skill-head {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 2px 6px;
+	min-width: 0;
+}
+
+.skill-name {
+	min-width: 0;
+	padding: 0;
+	border: none;
+	background: none;
+	color: var(--c-fg);
+	font-family: var(--vscode-editor-font-family, monospace);
+	font-size: var(--fs-code);
+	font-weight: 600;
+	text-align: left;
+	overflow-wrap: anywhere;
+}
+
+.skill-name:hover {
+	color: var(--vscode-textLink-foreground, var(--c-open));
+	text-decoration: underline;
+}
+
+.skill-source,
+.skill-off {
+	padding: 0 6px;
+	border-radius: 9999px;
+	font-size: calc(var(--fs) - 2px);
+	line-height: 16px;
+	white-space: nowrap;
+}
+
+.skill-source {
+	background: var(--c-border);
+	color: var(--c-fg-3);
+}
+
+.skill-off {
+	border: 1px solid var(--c-border-heavy);
+	color: var(--c-fg-2);
+}
+
+.skill-description {
+	display: -webkit-box;
+	margin: 0;
+	overflow: hidden;
+	color: var(--c-fg-2);
+	line-height: 1.4;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 2;
+}
+
+.skill-description.no-description {
+	font-style: italic;
+	color: var(--c-fg-3);
+}
+
+.skill-use {
+	flex: none;
+	height: 22px;
+	padding: 0 10px;
+	border: 1px solid var(--c-border-heavy);
+	border-radius: 9999px;
+	background: transparent;
+	color: var(--c-fg);
+	font-size: var(--fs-sm);
+	white-space: nowrap;
+	opacity: 0;
+	transition: opacity 120ms ease;
+}
+
+.skill-row:hover .skill-use,
+.skill-use:focus-visible {
+	opacity: 1;
+}
+
+.skill-use:hover {
+	border-color: var(--omp-accent);
+	color: var(--omp-accent);
+}
+
+.skills-empty {
+	margin: 0;
+	padding: 12px 4px;
+	color: var(--c-fg-3);
+	text-align: center;
+	line-height: 1.45;
+}
+
+.skills-footer {
+	display: flex;
+	padding-top: 8px;
+	border-top: 1px solid var(--c-border);
+}
+
+.skills-import {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	flex: 1;
+	height: 28px;
+	padding: 0 12px;
+	border: 1px dashed var(--c-border-heavy);
+	border-radius: 9999px;
+	background: transparent;
+	color: var(--c-fg);
+	font-size: var(--fs-sm);
+}
+
+.skills-import .icon {
+	width: 14px;
+	height: 14px;
+	color: var(--omp-accent);
+}
+
+.skills-import:hover {
+	border-style: solid;
+	border-color: var(--omp-accent);
+	background: color-mix(in srgb, var(--omp-accent) 8%, transparent);
+}
+
+.skills-curating {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 8px 10px;
+	border-radius: var(--r-md);
+	background: color-mix(in srgb, var(--omp-accent) 9%, transparent);
+	color: var(--c-fg);
+	line-height: 1.45;
+}
+
+.skills-curating-spinner {
+	flex: none;
+	width: 12px;
+	height: 12px;
+	border-radius: 9999px;
+	border: 1.5px solid color-mix(in srgb, var(--omp-accent) 30%, transparent);
+	border-top-color: var(--omp-accent);
+	animation: history-spin 0.8s linear infinite;
+}
+
+/* The "Mejorar prompt" card above the composer shares the look of the skill proposals. */
+.skills-proposals,
+.enhance-prompt {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	flex: none;
+	max-height: 45vh;
+	overflow-y: auto;
+	padding: 10px;
+	border: 1px solid color-mix(in srgb, var(--omp-accent) 45%, transparent);
+	border-radius: var(--r-lg);
+	background: color-mix(in srgb, var(--omp-accent) 6%, transparent);
+}
+
+.skills-proposals-head {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	color: var(--omp-accent);
+}
+
+.skills-proposals-head .icon {
+	width: 14px;
+	height: 14px;
+}
+
+.skills-proposals-title {
+	font-size: var(--fs);
+	font-weight: 600;
+	color: var(--c-fg);
+}
+
+.skills-proposals-hint {
+	margin: 0;
+	color: var(--c-fg-3);
+	line-height: 1.4;
+}
+
+.skill-proposal {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding: 10px;
+	border: 1px solid var(--c-border-heavy);
+	border-radius: var(--r-md);
+	background: var(--menu-bg);
+}
+
+.skill-proposal.stale,
+.enhance-prompt.stale {
+	opacity: 0.75;
+}
+
+.skill-proposal-head {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.skill-proposal-skill {
+	font-family: var(--vscode-editor-font-family, monospace);
+	font-size: var(--fs-code);
+	font-weight: 600;
+	overflow-wrap: anywhere;
+}
+
+.skill-proposal-summary {
+	margin: 0;
+	color: var(--c-fg);
+	font-weight: 500;
+	line-height: 1.4;
+}
+
+.skill-proposal-reason {
+	margin: 0;
+	color: var(--c-fg-2);
+	line-height: 1.45;
+	white-space: pre-wrap;
+}
+
+.skill-proposal-toggle {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	align-self: flex-start;
+	max-width: 100%;
+	padding: 0;
+	border: none;
+	background: none;
+	color: var(--vscode-textLink-foreground, var(--c-open));
+	font-size: var(--fs-sm);
+	text-align: left;
+	overflow-wrap: anywhere;
+}
+
+.skill-proposal-toggle .icon {
+	width: 13px;
+	height: 13px;
+}
+
+.skill-proposal-toggle:hover {
+	text-decoration: underline;
+}
+
+.skill-proposal-diff {
+	max-height: 240px;
+	margin: 0;
+	padding: 6px 8px;
+	overflow: auto;
+	border-radius: var(--r-sm);
+	background: var(--c-bg);
+	font-family: var(--vscode-editor-font-family, monospace);
+	font-size: var(--fs-code);
+	line-height: 1.4;
+	white-space: pre;
+}
+
+.skill-proposal-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+.skill-proposal-approve,
+.skill-proposal-secondary {
+	height: 26px;
+	padding: 0 12px;
+	border-radius: 9999px;
+	font-size: var(--fs-sm);
+	white-space: nowrap;
+}
+
+.skill-proposal-approve {
+	border: 1px solid var(--omp-accent);
+	background: var(--omp-accent);
+	color: var(--omp-accent-fg);
+	font-weight: 600;
+}
+
+.skill-proposal-approve:hover:not(:disabled) {
+	filter: brightness(1.08);
+}
+
+.skill-proposal-secondary {
+	border: 1px solid var(--c-border-heavy);
+	background: transparent;
+	color: var(--c-fg);
+}
+
+.skill-proposal-secondary:last-child {
+	margin-left: auto;
+}
+
+.skill-proposal-secondary:hover:not(:disabled) {
+	background: var(--c-hover);
+}
+
+.skill-proposal-approve:disabled,
+.skill-proposal-secondary:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+
+.skill-proposal-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+	padding: 0 6px;
+	border: 1px solid color-mix(in srgb, var(--omp-accent) 55%, transparent);
+	border-radius: 9999px;
+	background: color-mix(in srgb, var(--omp-accent) 12%, transparent);
+	color: var(--omp-accent);
+	font-size: calc(var(--fs) - 2px);
+	line-height: 16px;
+	white-space: nowrap;
+}
+
+.skill-proposal-chip .icon {
+	width: 10px;
+	height: 10px;
+}
+
+.skill-proposal-chip:hover {
+	background: color-mix(in srgb, var(--omp-accent) 22%, transparent);
+}
+
+.enhance-prompt {
+	margin-bottom: 8px;
+	font-size: var(--fs-sm);
+}
+
+.enhance-prompt-head .notice-close {
+	margin-left: auto;
+}
+
+.enhance-prompt-model {
+	min-width: 0;
+	overflow: hidden;
+	color: var(--c-fg-3);
+	font-size: calc(var(--fs) - 2px);
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.enhance-prompt-input {
+	display: block;
+	width: 100%;
+	min-height: 44px;
+	max-height: 30vh;
+	padding: 6px 8px;
+	resize: vertical;
+	border: 1px solid var(--c-border-heavy);
+	border-radius: var(--r-md);
+	background: var(--vscode-input-background, var(--c-bg));
+	color: var(--vscode-input-foreground, var(--c-fg));
+	font: inherit;
+	font-size: var(--fs);
+	line-height: 1.45;
+	overflow-y: auto;
+}
+
+.enhance-prompt-input:focus {
+	outline: none;
+	border-color: var(--omp-accent);
+}
+
+.enhance-prompt-diff {
+	max-height: 200px;
+	padding: 6px 8px;
+	overflow: auto;
+	border-radius: var(--r-sm);
+	background: var(--c-bg);
+	line-height: 1.5;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+.enhance-prompt-diff-del {
+	background: var(--vscode-diffEditor-removedTextBackground, rgb(255 0 0 / 0.2));
+	color: var(--c-fg-2);
+	text-decoration: line-through;
+}
+
+.enhance-prompt-diff-ins {
+	background: var(--vscode-diffEditor-insertedTextBackground, rgb(155 185 85 / 0.25));
+}
+
+.enhance-prompt-list {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.enhance-prompt-list-title {
+	color: var(--c-fg-2);
+	font-weight: 600;
+}
+
+.enhance-prompt-list ul {
+	margin: 0;
+	padding-left: 18px;
+	color: var(--c-fg-2);
+	line-height: 1.45;
+}
+
+.enhance-prompt-ambiguities .enhance-prompt-list-title {
+	color: var(--vscode-editorWarning-foreground, #cca700);
+}
+
+.enhance-prompt-warning {
+	margin: 0;
+	color: var(--vscode-editorWarning-foreground, #cca700);
 }
 
 /* Subagent panel: delegate mode button with a count badge and a popover listing the task's subagents. */
@@ -4922,6 +5687,197 @@ code {
 .plan-feedback .plan-card-approve:disabled {
 	opacity: 0.5;
 	cursor: default;
+}
+
+/* "Ask something" on selected answer text: a side chat over the view (webview/chat/ask-selection.ts). */
+
+.ask-selection {
+	position: fixed;
+	inset: 0;
+	z-index: 200;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 16px;
+	background: rgb(0 0 0 / 0.55);
+	animation: lightbox-in 0.12s ease-out;
+}
+
+.ask-selection-card {
+	display: flex;
+	flex-direction: column;
+	width: min(560px, 100%);
+	height: min(560px, 100%);
+	border: 1px solid var(--c-border-heavy);
+	border-radius: var(--r-xl);
+	background: var(--c-surface);
+	box-shadow: 0 8px 32px rgb(0 0 0 / 0.45);
+	overflow: hidden;
+}
+
+.ask-selection-header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 36px;
+	padding: 4px 6px 4px 12px;
+	border-bottom: 1px solid var(--c-border);
+}
+
+.ask-selection-icon .icon {
+	width: 14px;
+	height: 14px;
+	color: var(--omp-accent);
+}
+
+.ask-selection-title {
+	font-weight: 600;
+}
+
+.ask-selection-model {
+	min-width: 0;
+	color: var(--c-fg-3);
+	font-size: var(--fs-sm);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.ask-selection-spacer {
+	flex: 1;
+}
+
+.ask-selection-quote {
+	flex: none;
+	margin: 10px 12px 0;
+	padding-left: 8px;
+	border-left: 2px solid var(--omp-accent);
+	color: var(--c-fg-3);
+	font-size: var(--fs-sm);
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 4;
+	overflow: hidden;
+}
+
+.ask-selection-log {
+	flex: 1;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 10px 12px;
+	overflow-y: auto;
+}
+
+.ask-selection-question {
+	align-self: flex-end;
+	max-width: 85%;
+	padding: 6px 10px;
+	border-radius: var(--r-lg);
+	background: var(--c-user);
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+.ask-selection-pending {
+	color: var(--c-fg-3);
+}
+
+.ask-selection-error {
+	color: var(--c-error);
+	font-size: var(--fs-sm);
+}
+
+.ask-selection-suggestions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	padding: 0 12px 8px;
+}
+
+.ask-selection-suggestion {
+	height: 24px;
+	padding: 0 10px;
+	border-radius: 9999px;
+	border: 1px solid var(--c-border-heavy);
+	background: transparent;
+	color: var(--c-fg-2);
+	font-size: var(--fs-sm);
+	cursor: pointer;
+}
+
+.ask-selection-suggestion:hover {
+	background: var(--c-hover);
+	color: var(--c-fg);
+}
+
+.ask-selection-form {
+	display: flex;
+	align-items: flex-end;
+	gap: 6px;
+	margin: 0 12px;
+	padding: 6px 6px 6px 10px;
+	border: 1px solid var(--c-border-heavy);
+	border-radius: var(--r-md);
+	background: var(--c-bg);
+}
+
+.ask-selection-form:focus-within {
+	border-color: var(--omp-accent);
+}
+
+.ask-selection-input {
+	flex: 1;
+	min-height: 20px;
+	max-height: 30vh;
+	padding: 2px 0;
+	border: none;
+	background: transparent;
+	color: var(--c-fg);
+	font: inherit;
+	resize: none;
+}
+
+.ask-selection-input:focus {
+	outline: none;
+}
+
+.ask-selection-input::placeholder {
+	color: var(--vscode-input-placeholderForeground, var(--c-fg-3));
+}
+
+.ask-selection-send {
+	flex: none;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 26px;
+	height: 26px;
+	padding: 0;
+	border: none;
+	border-radius: 9999px;
+	background: var(--omp-accent);
+	color: var(--vscode-button-foreground, #fff);
+	cursor: pointer;
+}
+
+.ask-selection-send:disabled {
+	opacity: 0.4;
+	cursor: default;
+}
+
+.ask-selection-send .icon {
+	width: 14px;
+	height: 14px;
+}
+
+.ask-selection-hint {
+	padding: 6px 12px 8px;
+	color: var(--c-fg-3);
+	font-size: var(--fs-sm);
 }
 
 /* Questions from omp's ask tool, over the chat (webview/chat/ask-dialog.ts). */

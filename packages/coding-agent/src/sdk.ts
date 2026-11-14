@@ -135,11 +135,13 @@ import {
 } from "./extensibility/skill-descriptions";
 import { resolvePath } from "./extensibility/utils";
 import {
+	getSessionDisabledSkillNames,
 	type LoadSkillsOptions,
 	loadSkills as loadSkillsInternal,
 	type Skill,
 	type SkillWarning,
 	setActiveSkills,
+	setSessionDisabledSkillNames,
 } from "./extensibility/skills";
 import { type FileSlashCommand, loadSlashCommands as loadSlashCommandsInternal } from "./extensibility/slash-commands";
 import type { HindsightSessionState } from "./hindsight/state";
@@ -219,6 +221,7 @@ import {
 import { describeUsageFallback } from "./session/retry-fallback-reason";
 import { getRestorableSessionModels } from "./session/session-context";
 import { SessionManager } from "./session/session-manager";
+import { getSessionDisabledSkills } from "./session/session-skills";
 import {
 	collectMountedMCPToolRoutes,
 	projectMountedMCPXdevGuidance,
@@ -307,6 +310,7 @@ import { ttsTool } from "./tools/tts";
 import { resolveActiveRepoContext } from "./utils/active-repo-context";
 import { EventBus } from "./utils/event-bus";
 import { normalizeProviderContextImagesForModel } from "./utils/image-loading";
+import { noLogPayload } from "./utils/litellm-no-log";
 import { formatLocalCalendarDate } from "@oh-my-pi/pi-tui/chrome/local-date";
 import { normalizePromptPath } from "./utils/prompt-path";
 import { buildNamedToolChoice } from "./utils/tool-choice";
@@ -2185,6 +2189,13 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 		skills = discovered.skills;
 		skillWarnings = discovered.warnings;
 	}
+	// Skills the session switched off for itself before its first prompt; a subagent drops
+	// the ones its top-level session switched off.
+	const sessionDisabledSkills = options.parentTaskPrefix
+		? [...getSessionDisabledSkillNames()]
+		: getSessionDisabledSkills(sessionManager.getBranch());
+	const disabledSkillNames = new Set(sessionDisabledSkills);
+	const sessionSkills = skills.filter(skill => !disabledSkillNames.has(skill.name));
 
 	// Agent identity must resolve before rule discovery: `agents` frontmatter decides
 	// which rules are bucketed into this session at all.
@@ -2354,7 +2365,7 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 			get skillHintVisible() {
 				return (
 					session?.getSkillHintVisible() ??
-					(cfgSkillful.get(settings) === true && (session?.skills ?? skills).length > 0)
+					(cfgSkillful.get(settings) === true && (session?.skills ?? sessionSkills).length > 0)
 				);
 			},
 			restrictToolNames,
@@ -2370,7 +2381,7 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 				return lateWorkspaceTree ?? resolvedWorkspaceTree;
 			},
 			get skills() {
-				return session?.skills ?? skills;
+				return session?.skills ?? sessionSkills;
 			},
 			refreshSkills: () => session.refreshSkills(),
 			rules: allRules,
@@ -2547,7 +2558,8 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 		// parent's ArtifactManager) so one lookup hits everything.
 		const getArtifactsDir = () => sessionManager.getArtifactsDir();
 		if (!options.parentTaskPrefix) {
-			setActiveSkills(skills);
+			setActiveSkills(sessionSkills);
+			setSessionDisabledSkillNames(disabledSkillNames);
 			// Include TTSR rules so `rule://<name>` can resolve them too. They are
 			// registered with the manager and bucketed out before rulebook/always,
 			// so without this a TTSR-only rule (e.g. a triggered builtin) is not
@@ -4035,7 +4047,7 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 				xdevDocs: xdevPromptDocs ? renderXdevPromptDocs(xdevPromptDocs, routedCatalogNames) : "",
 				resolvedCustomPrompt: options.customSystemPrompt,
 				systemPromptTemplate: options.systemPromptTemplate,
-				skills: cfgSkillful.get(settings) ? (session?.skills ?? skills) : [],
+				skills: cfgSkillful.get(settings) ? (session?.skills ?? sessionSkills) : [],
 				skillDescriptions,
 				contextFiles,
 				tools: promptTools,
@@ -4709,6 +4721,7 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 			evalToolSession: toolSession,
 			customCommands: customCommandsResult.commands,
 			skills,
+			sessionDisabledSkills,
 			skillDescriptions,
 			skillWarnings,
 			skillsReloadable: options.skills === undefined,
@@ -5370,7 +5383,7 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 			model: () => resolveSkillCurationModel(settings, modelRegistry.getAvailable()),
 			customType: "skill-curation",
 			history: "none",
-			onPayload,
+			onPayload: async (payload, model, signal) => noLogPayload(await onPayload(payload, model, signal), model),
 			onResponse,
 			createAgent: createCaptureAgent,
 		});

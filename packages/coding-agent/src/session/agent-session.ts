@@ -451,6 +451,11 @@ import {
 import { SessionMemory, type SessionMemoryHost } from "./session-memory";
 import { buildSessionMetadata } from "./session-metadata";
 import { SessionProviderBoundary, type SessionProviderBoundaryHost } from "./session-provider-boundary";
+import {
+	getSessionDisabledSkills,
+	SESSION_DISABLED_SKILLS_ENTRY_TYPE,
+	type SessionDisabledSkillsEntry,
+} from "./session-skills";
 import { SessionStatsTracker, type SessionStatsTrackerHost } from "./session-stats";
 import { SessionTools, type SessionToolsHost } from "./session-tools";
 import { resolveOpenAIWebsocketPreference } from "./settings-stream-fn";
@@ -2218,6 +2223,7 @@ export class AgentSession implements SettingsScope {
 			setActiveToolNames: config.setActiveToolNames,
 			baseSystemPrompt: this.agent.state.systemPrompt,
 			skills: config.skills,
+			sessionDisabledSkills: config.sessionDisabledSkills,
 			skillWarnings: config.skillWarnings,
 			skillsSettings: config.skillsSettings,
 			skillsReloadable: config.skillsReloadable,
@@ -9611,9 +9617,47 @@ export class AgentSession implements SettingsScope {
 		return this.#tools.skillsSettings;
 	}
 
-	/** Skills loaded by SDK (empty if --no-skills or skills: [] was passed) */
+	/** Skills the session uses: those loaded by SDK (empty if --no-skills or skills: [] was passed) minus the ones it switched off. */
 	get skills(): readonly Skill[] {
 		return this.#tools.skills;
+	}
+
+	/** Every discovered skill, including the ones this session switched off. */
+	get discoveredSkills(): readonly Skill[] {
+		return this.#tools.discoveredSkills;
+	}
+
+	/** Names of the skills this session switched off for itself. */
+	get sessionDisabledSkills(): ReadonlySet<string> {
+		return this.#tools.sessionDisabledSkills;
+	}
+
+	/**
+	 * Whether the session's skills may still change: nothing was sent yet, so no
+	 * model call has seen the system prompt that lists them.
+	 */
+	get skillsEditable(): boolean {
+		return this.agent.state.messages.length === 0 && !this.isStreaming;
+	}
+
+	/**
+	 * Switches the named skills off for this session only (an empty list turns
+	 * every skill back on), recorded in the session so a resume keeps them off.
+	 * Names no discovered skill carries are ignored.
+	 *
+	 * @throws Error once the session has messages ({@link skillsEditable}).
+	 */
+	async setSessionDisabledSkills(names: readonly string[]): Promise<void> {
+		if (!this.skillsEditable) {
+			throw new Error("Skills can only be switched off before the first prompt of the session.");
+		}
+		const known = new Set(this.#tools.discoveredSkills.map(skill => skill.name));
+		const disabled = [...new Set(names)].filter(name => known.has(name)).sort();
+		const data: SessionDisabledSkillsEntry = { version: 1, names: disabled };
+		this.sessionManager.appendCustomEntry(SESSION_DISABLED_SKILLS_ENTRY_TYPE, data);
+		this.#tools.setSessionDisabledSkills(disabled);
+		await this.refreshBaseSystemPrompt();
+		this.#notifyCommandMetadataChanged();
 	}
 
 	/** Descriptions frozen when this session's system prompt was built. */
@@ -10332,6 +10376,7 @@ export class AgentSession implements SettingsScope {
 			// directory set, not the previous session's — refresh before the next
 			// turn goes out.
 			resetCapabilities();
+			this.#tools.setSessionDisabledSkills([]);
 			await this.refreshBaseSystemPrompt();
 
 			// Emit session_switch event with reason "new" to hooks
@@ -11894,6 +11939,7 @@ export class AgentSession implements SettingsScope {
 		const previousServiceTierByFamily = this.serviceTierByFamily;
 		const previousTools = [...this.agent.state.tools];
 		const previousBaseSystemPrompt = this.#tools.baseSystemPrompt;
+		const previousSessionDisabledSkills = this.#tools.sessionDisabledSkills;
 		const previousSystemPrompt = this.agent.state.systemPrompt;
 		const previousBaseSystemPromptBeforeMemoryPromotion = this.#memory.promotionSnapshot;
 		const previousFreshProviderSessionId = this.#freshProviderSessionId;
@@ -11992,6 +12038,8 @@ export class AgentSession implements SettingsScope {
 				previousSessionContext !== undefined &&
 				didSessionMessagesChange(previousSessionContext.messages, sessionContext.messages);
 			this.#rehydrateCheckpointRewindState();
+			// The target's own skill choice; the base prompt rebuild below applies it.
+			this.#tools.setSessionDisabledSkills(getSessionDisabledSkills(this.sessionManager.getBranch()));
 
 			// As on /new: the outgoing session's background jobs share this agent id, so their
 			// results would otherwise land in the resumed transcript. Cancelled after the cwd and
@@ -12145,6 +12193,7 @@ export class AgentSession implements SettingsScope {
 			this.#memory.rekeyForCurrentSessionId();
 			this.agent.setTools(previousTools);
 			this.#tools.setBaseSystemPrompt(previousBaseSystemPrompt);
+			this.#tools.setSessionDisabledSkills(previousSessionDisabledSkills);
 			this.#memory.restorePromotionSnapshot(previousBaseSystemPromptBeforeMemoryPromotion);
 			this.agent.setSystemPrompt(previousSystemPrompt);
 			this.agent.replaceMessages(previousAgentMessages);

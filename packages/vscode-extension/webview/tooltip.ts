@@ -45,6 +45,10 @@ export function installTooltips(): void {
 		// An open menu or popover already covers what the control's tooltip would say.
 		if (!text || !element.isConnected || element.ariaExpanded === "true") return hide();
 		bubble.textContent = text;
+		// Measure at the left edge: a fixed box shrinks to the room right of where the previous
+		// tooltip left it, which wraps the text into more lines and would place it too high.
+		bubble.style.top = "0px";
+		bubble.style.left = "0px";
 		bubble.hidden = false;
 		const anchor = element.getBoundingClientRect();
 		const box = bubble.getBoundingClientRect();

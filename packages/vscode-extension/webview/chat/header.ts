@@ -1,23 +1,15 @@
 /**
- * Top bar: π mark, session title (renamable in place), skill self-improvement
- * beside it (a spinner while omp reviews the skills the last task relied on, and
- * a button counting the skill proposals awaiting a decision, which opens them
- * with Approve / Reject), a "No workspace" badge on chats without a workspace,
- * and New chat / New chat without workspace / New chat in another tab (a menu
- * choosing the project or no workspace) / History / Settings icon buttons.
- * History carries a blinking green badge counting the sessions that finished unseen.
+ * Top bar: π mark, session title (renamable in place), a "No workspace" badge
+ * on chats without a workspace, and New chat / New chat without workspace /
+ * New chat in another tab (a menu choosing the project or no workspace) /
+ * History / Settings icon buttons. History carries a blinking green badge
+ * counting the sessions that finished unseen. Skill self-improvement (review
+ * in progress, proposals) lives on the composer's skills button.
  */
-import type {
-	ChatRequest,
-	SessionActivity,
-	SessionState,
-	SessionStats,
-	SkillProposalSummary,
-} from "../../src/protocol";
+import type { ChatRequest, SessionActivity, SessionState, SessionStats } from "../../src/protocol";
 import { h, iconButton } from "../dom";
 import { icon } from "../icons";
 import { setTooltip } from "../tooltip";
-import { skillProposalElement } from "./notices";
 
 type Post = (request: ChatRequest) => void;
 
@@ -44,34 +36,6 @@ export class Header {
 		},
 		icon("globe"),
 		"No workspace",
-	);
-	#curationRunning = false;
-	#proposalCount = 0;
-	#curationSpinner = h("span", {
-		className: "curation-spinner",
-		hidden: true,
-		role: "status",
-		ariaLabel: "Reviewing skills",
-		dataset: { tooltip: "MarIA Code is reviewing the skills this task relied on" },
-	});
-	#curationCount = h("span", { className: "curation-count" });
-	#curationDone = h(
-		"button",
-		{ type: "button", className: "curation-done", hidden: true, ariaExpanded: "false" },
-		icon("pencil"),
-		this.#curationCount,
-	);
-	#curationList = h("div", { className: "curation-list" });
-	#curationPanel = h(
-		"div",
-		{ className: "curation-panel", hidden: true, role: "dialog", ariaLabel: "Skill proposals" },
-		h(
-			"div",
-			{ className: "curation-panel-head" },
-			h("span", { className: "curation-panel-title" }, "Skill proposals"),
-			iconButton("close", "Close", () => this.#closeCurationPanel()),
-		),
-		this.#curationList,
 	);
 	#newTabButton: HTMLButtonElement;
 	#newTabItems: HTMLButtonElement[];
@@ -113,25 +77,14 @@ export class Header {
 			this.#newTabItems[next]?.focus();
 		});
 		this.#newTabAnchor = h("div", { className: "new-tab-anchor" }, this.#newTabButton, this.#newTabMenu);
-		this.#curationDone.addEventListener("click", () => {
-			if (this.#curationPanel.hidden) this.#openCurationPanel();
-			else this.#closeCurationPanel();
-		});
 		document.addEventListener("keydown", event => {
-			if (event.key !== "Escape") return;
-			if (!this.#curationPanel.hidden) this.#closeCurationPanel();
-			if (!this.#newTabMenu.hidden) {
-				this.#closeNewTabMenu();
-				this.#newTabButton.focus();
-			}
+			if (event.key !== "Escape" || this.#newTabMenu.hidden) return;
+			this.#closeNewTabMenu();
+			this.#newTabButton.focus();
 		});
 		document.addEventListener("mousedown", event => {
 			const target = event.target as Node | null;
-			if (!target) return;
-			if (!this.#newTabMenu.hidden && !this.#newTabAnchor.contains(target)) this.#closeNewTabMenu();
-			if (this.#curationPanel.hidden) return;
-			if (this.#curationPanel.contains(target) || this.#curationDone.contains(target)) return;
-			this.#closeCurationPanel();
+			if (target && !this.#newTabMenu.hidden && !this.#newTabAnchor.contains(target)) this.#closeNewTabMenu();
 		});
 		this.#input.addEventListener("keydown", event => {
 			if (event.isComposing) return;
@@ -150,8 +103,6 @@ export class Header {
 			this.brand,
 			this.#title,
 			this.#input,
-			this.#curationSpinner,
-			this.#curationDone,
 			this.#rename,
 			this.#noWorkspace,
 			h(
@@ -166,7 +117,6 @@ export class Header {
 				this.#back,
 				iconButton("settings", "Settings", () => post({ type: "openSettings" })),
 			),
-			this.#curationPanel,
 		);
 		this.#render();
 	}
@@ -181,42 +131,6 @@ export class Header {
 		this.#sessionTitle = title || state.sessionName || "New chat";
 		this.#noWorkspace.dataset.on = String(noWorkspace);
 		this.#render();
-	}
-
-	/** Whether omp is reviewing the open session's skills (host `skillCuration` update). */
-	setCuration(status: "idle" | "running"): void {
-		this.#curationRunning = status === "running";
-		this.#render();
-	}
-
-	/** The skill proposals awaiting a decision that the shown session's task produced (host `skillProposals` update). */
-	setProposals(proposals: SkillProposalSummary[]): void {
-		this.#proposalCount = proposals.length;
-		this.#curationCount.textContent = String(proposals.length);
-		setTooltip(
-			this.#curationDone,
-			`${proposals.length} skill change${proposals.length === 1 ? "" : "s"} proposed — click to review`,
-		);
-		this.#curationList.replaceChildren(
-			...proposals.map(proposal =>
-				skillProposalElement(proposal, {
-					approve: () => this.post({ type: "approveSkillProposal", id: proposal.id }),
-					reject: () => this.post({ type: "rejectSkillProposal", id: proposal.id }),
-					openDiff: () => this.post({ type: "openSkillProposalDiff", id: proposal.id }),
-				}),
-			),
-		);
-		this.#render();
-	}
-
-	#openCurationPanel(): void {
-		this.#curationPanel.hidden = false;
-		this.#curationDone.ariaExpanded = "true";
-	}
-
-	#closeCurationPanel(): void {
-		this.#curationPanel.hidden = true;
-		this.#curationDone.ariaExpanded = "false";
 	}
 
 	#newTabItem(iconName: "folder" | "globe", label: string, noWorkspace: boolean): HTMLButtonElement {
@@ -295,10 +209,6 @@ export class Header {
 		this.#title.hidden = !this.#input.hidden;
 		this.#rename.hidden = !this.#canRename() || !this.#input.hidden;
 		this.#noWorkspace.hidden = this.#noWorkspace.dataset.on !== "true" || this.#historyOpen || !this.#input.hidden;
-		const curationVisible = !this.#historyOpen && this.#input.hidden;
-		this.#curationSpinner.hidden = !curationVisible || !this.#curationRunning;
-		this.#curationDone.hidden = !curationVisible || this.#proposalCount === 0;
-		if (this.#curationDone.hidden) this.#closeCurationPanel();
 		setTooltip(this.#title, this.#canRename() ? `${text}\nDouble-click to rename` : text);
 	}
 }

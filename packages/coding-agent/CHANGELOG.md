@@ -5,6 +5,9 @@
 ### Added
 
 - Copy the complete answer with the terminal's Copy response button or `/copy answer`, including when viewing a subagent ([#4](https://github.com/javimp2003/oh-my-pi/pull/4) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
+- Added RPC `enhance_prompt` / `enhance_prompt_cancel` ("Mejorar prompt"): one tool-less, unrecorded call proposes a faithful rewrite of a composer draft (clearer, better ordered, never wider in scope) with a change list and unresolved ambiguities, on the new `enhance` model role (unset, a configured `smol` role, else the session's model); a proposal that alters literal tokens of the draft (code, paths, URLs, `@mentions`, a leading `/command`) comes back `invalid`. On Unicaja's LiteLLM gateway these requests carry `"no-log": true`
+- Added RPC `ask_selection` / `ask_selection_cancel` with `ask_selection_delta` frames: quick questions about text selected in an answer, answered outside the session (nothing is recorded) on the new `ask` model role (`modelRoles.ask` in `config.yml`, with an optional `:level` thinking suffix; unset, the session's model). On Unicaja's LiteLLM gateway these requests carry `"no-log": true` too
+- Added RPC `get_skills`, `set_disabled_skills` and `reload_skills`: a host can list the session's skills, switch some off for that session only before its first prompt (they leave the system prompt, `/skill:` commands, `skill://` and its subagents, and stay off when the session is resumed), and rediscover skills after adding one
 - Coding conversations now start with a brief repository map in the workspace snapshot; it stays the same through compaction and is taken again for a new conversation ([#3](https://github.com/javimp2003/oh-my-pi/pull/3) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
 - Added `imageCountBudget` to custom models and `modelOverrides` in models.yml: a positive integer that replaces the provider's default per-request image budget, so a gateway with a higher limit keeps every image (upstream #15969)
 - Added acceptance contracts with revision-bound check evidence and optional independent executable review ([#4](https://github.com/javimp2003/oh-my-pi/pull/4) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
@@ -61,6 +64,7 @@
 
 ### Changed
 
+- Skill curation requests sent to Unicaja's LiteLLM gateway (`driver-ia.*.unicajasc.corp`) now carry `"no-log": true`, so LiteLLM keeps them out of its logging callbacks and spend logs
 - Manual `/compact` now honors a preferred `handoff` method, reusing the live prompt prefix for its summary before falling back to soft compaction ([#3](https://github.com/javimp2003/oh-my-pi/pull/3) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
 - Messages from other agents (IRC mail) now reach the model as user turns attributed to the sending agent instead of developer-authority messages
 - Auto-QA tool-issue reporting (`dev.autoqa`) is now off by default and `dev.autoqaPush.endpoint` is empty by default, so no grievances are recorded or pushed until you enable it and configure an endpoint
@@ -99,6 +103,7 @@
 
 - Fixed shell platform metadata following the host OS instead of the configured engine platform ([#4](https://github.com/javimp2003/oh-my-pi/pull/4) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
 - Fixed Python eval tool definitions failing on Python 3.9 when inferring parameter schemas ([#4](https://github.com/javimp2003/oh-my-pi/pull/4) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
+- RPC mode now writes a new session to disk at its first prompt, so hosts listing sessions (the VS Code history) show it while the model is still thinking on its first reply
 - Fixed background (speculative) compaction sharing the live turn's provider session; it keeps its own session while still reading the live prompt cache ([#3](https://github.com/javimp2003/oh-my-pi/pull/3) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
 - Fixed resumed text forks reporting an old result when their next model request is blocked ([#4](https://github.com/javimp2003/oh-my-pi/pull/4) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
 - Fixed concurrent review limits and stale verdicts across request, branch and verification changes; unchanged reviews now reuse their recorded findings ([#4](https://github.com/javimp2003/oh-my-pi/pull/4) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))

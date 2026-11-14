@@ -37,6 +37,7 @@ export type IconName =
 	| "plusGlobe"
 	| "copyPlus"
 	| "reply"
+	| "askBubble"
 	| "zap"
 	| "timer"
 	| "layers"
@@ -46,6 +47,10 @@ export type IconName =
 	| "folder"
 	| "mailDot"
 	| "messageQuestion"
+	| "bookOpen"
+	| "lock"
+	| "download"
+	| "sparkles"
 	| "litellm";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -94,6 +99,8 @@ const PATHS: Record<IconName, string> = {
 	copyPlus:
 		"M15 12v6M12 15h6M10 8h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2zM4 16a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2",
 	reply: "m9 17-5-5 5-5M20 18v-2a4 4 0 0 0-4-4H4",
+	// A speech bubble with a question mark (Lucide "message-circle-question"): "Ask something" about a selection.
+	askBubble: "M7.9 20A9 9 0 1 0 4 16.1L2 22ZM9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3M12 17h.01",
 	zap: "M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z",
 	// A stopwatch: the scope checkpoint (how long MarIA Code has been working).
 	timer: "M10 2h4M12 14l3-3M20 14a8 8 0 1 1-16 0 8 8 0 0 1 16 0z",
@@ -115,6 +122,16 @@ const PATHS: Record<IconName, string> = {
 		"M22 13V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8M22 7l-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7M22 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0z",
 	// A speech bubble with a question mark (Lucide "message-circle-question"): omp asked the user.
 	messageQuestion: "M7.9 20A9 9 0 1 0 4 16.1L2 22zM9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3M12 17h.01",
+	// An open book (Lucide "book-open"): the skills a chat can use.
+	bookOpen:
+		"M12 7v14M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z",
+	// A padlock (Lucide "lock"): something fixed for the rest of the session.
+	lock: "M7 11V7a5 5 0 0 1 10 0v4M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2z",
+	// An arrow into a tray (Lucide "download"): bring something in from disk.
+	download: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3",
+	// Sparkles (Lucide "sparkles"): an improvement MarIA Code proposes for a skill.
+	sparkles:
+		"M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0zM20 3v4M22 5h-4M4 17v2M5 18H3",
 	// The LiteLLM bullet train, single-colour light variant (selfh.st icons "litellm-light.svg",
 	// CC BY 4.0, github.com/selfhst/icons): a model served through a LiteLLM gateway.
 	litellm:

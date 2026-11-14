@@ -71,6 +71,9 @@ export type RpcCommand =
 	| { id?: string; type: "cancel_async_job"; jobId: string }
 	| { id?: string; type: "set_ask_dialog"; enabled: boolean }
 	| { id?: string; type: "get_available_commands" }
+	| { id?: string; type: "get_skills" }
+	| { id?: string; type: "set_disabled_skills"; names: string[] }
+	| { id?: string; type: "reload_skills" }
 	| { id?: string; type: "get_entries"; since?: string }
 	| { id?: string; type: "get_tree" }
 	| { id?: string; type: "set_todos"; phases: TodoPhase[] }
@@ -156,7 +159,60 @@ export type RpcCommand =
 	// Side questions (/btw); answers stream as `btw_delta` / `btw_record` frames
 	| { id?: string; type: "btw"; question: string; recordId?: string }
 	| { id?: string; type: "btw_cancel"; recordId?: string }
-	| { id?: string; type: "get_btw_history" };
+	| { id?: string; type: "get_btw_history" }
+
+	// "Ask something" about selected answer text; answers stream as `ask_selection_delta` frames
+	| {
+			id?: string;
+			type: "ask_selection";
+			askId: string;
+			selection: string;
+			answer?: string;
+			question: string;
+			history?: RpcAskSelectionTurn[];
+	  }
+	| { id?: string; type: "ask_selection_cancel"; askId: string }
+
+	// "Mejorar prompt": a faithful rewrite of a composer draft, proposed and never sent
+	| { id?: string; type: "enhance_prompt"; requestId: string; draft: string; context?: RpcEnhancePromptContext }
+	| { id?: string; type: "enhance_prompt_cancel"; requestId: string };
+
+/** One earlier question about the same selection and its answer. */
+export interface RpcAskSelectionTurn {
+	question: string;
+	answer: string;
+}
+
+/** Editor context sent with `enhance_prompt`. */
+export interface RpcEnhancePromptContext {
+	/** The chat has no workspace: no repository or editor context is used. */
+	noWorkspace?: boolean;
+	/** Workspace-relative path of the active editor. */
+	activeFile?: string;
+	/** The active editor's selection, capped by the host to 40 lines. */
+	selection?: string;
+	/** Paths of the draft's `@` mentions. */
+	mentions?: string[];
+}
+
+export type RpcEnhancePromptStatus = "improved" | "unchanged" | "invalid";
+
+/** The proposed rewrite of an `enhance_prompt` draft. */
+export interface RpcEnhancePromptResult {
+	status: RpcEnhancePromptStatus;
+	/** The proposed text; equals the draft when `unchanged` or `invalid`. */
+	prompt: string;
+	/** Up to four short bullets describing the edits, in the draft's language. */
+	changes: string[];
+	/** Ambiguities noticed but not resolved, in the draft's language. */
+	ambiguities: string[];
+	/** The proposal is more than 2.5× the draft's length. */
+	lengthWarning: boolean;
+	/** Why the proposal was rejected (English); set only when `status` is `invalid`. */
+	invalidReason?: string;
+	/** `provider/id` of the model that rewrote the draft. */
+	model: string;
+}
 
 // ============================================================================
 // RPC State
@@ -416,6 +472,24 @@ export interface RpcAsyncJob {
 	output?: string;
 }
 
+/** One skill discovered for the session (`get_skills`). */
+export interface RpcSessionSkill {
+	name: string;
+	description: string;
+	/** Where it was discovered, as `<provider>:<level>`. */
+	source: string;
+	/** Path of its `SKILL.md`. */
+	filePath: string;
+	/** False when the session switched it off. */
+	enabled: boolean;
+}
+
+/** The session's skills and whether `set_disabled_skills` is still accepted. */
+export interface RpcSessionSkills {
+	skills: RpcSessionSkill[];
+	editable: boolean;
+}
+
 // ============================================================================
 // RPC Responses (stdout)
 // ============================================================================
@@ -499,6 +573,9 @@ export type RpcResponse =
 			success: true;
 			data: { commands: RpcAvailableSlashCommand[] };
 	  }
+	| { id?: string; type: "response"; command: "get_skills"; success: true; data: RpcSessionSkills }
+	| { id?: string; type: "response"; command: "set_disabled_skills"; success: true; data: RpcSessionSkills }
+	| { id?: string; type: "response"; command: "reload_skills"; success: true; data: RpcSessionSkills }
 	| {
 			id?: string;
 			type: "response";
@@ -693,6 +770,20 @@ export type RpcResponse =
 			data: { records: readonly BtwHistoryRecord[] };
 	  }
 
+	// "Ask something" about selected answer text
+	| {
+			id?: string;
+			type: "response";
+			command: "ask_selection";
+			success: true;
+			data: { answer: string; model: string };
+	  }
+	| { id?: string; type: "response"; command: "ask_selection_cancel"; success: true; data: { cancelled: boolean } }
+
+	// "Mejorar prompt"
+	| { id?: string; type: "response"; command: "enhance_prompt"; success: true; data: RpcEnhancePromptResult }
+	| { id?: string; type: "response"; command: "enhance_prompt_cancel"; success: true; data: { cancelled: boolean } }
+
 	// Error response (any command can fail); `code` is an optional machine-readable reason.
 	| { id?: string; type: "response"; command: string; success: false; error: string; code?: string };
 
@@ -711,6 +802,13 @@ export interface RpcBtwDeltaFrame {
 export interface RpcBtwRecordFrame {
 	type: "btw_record";
 	record: BtwHistoryRecord;
+}
+
+/** Text appended to the answer of the running `ask_selection` question `askId`. */
+export interface RpcAskSelectionDeltaFrame {
+	type: "ask_selection_delta";
+	askId: string;
+	delta: string;
 }
 
 // ============================================================================

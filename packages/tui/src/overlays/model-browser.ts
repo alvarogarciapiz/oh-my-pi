@@ -57,6 +57,8 @@ export type ModelRole =
 	| "task"
 	| "advisor"
 	| "curator"
+	| "ask"
+	| "enhance"
 	| "image"
 	| "web"
 	| "speech"
@@ -74,6 +76,8 @@ export const MODEL_ROLE_IDS: ModelRole[] = [
 	"task",
 	"advisor",
 	"curator",
+	"ask",
+	"enhance",
 	"image",
 	"web",
 	"speech",
@@ -92,6 +96,8 @@ export const CHAT_MODEL_ROLE_IDS: ModelRole[] = [
 	"task",
 	"advisor",
 	"curator",
+	"ask",
+	"enhance",
 ];
 export const KIND_ROLE_IDS: ModelRole[] = ["image", "web", "speech", "dictation", "judge"];
 

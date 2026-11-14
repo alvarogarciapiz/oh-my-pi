@@ -91,7 +91,7 @@ Clients MUST continue reading stdout after closing stdin. Normal EOF and extensi
 9. Prompt completion (`{ type: "prompt_result", id?, agentInvoked, status, error?, sessionSettled }`), unless the response already completed the prompt locally; see [`prompt` payload](#prompt-payload)
 10. Session quiescence (`{ type: "session_settled" }`); see [Yield vs settled](#yield-vs-settled)
 11. Subagent frames (`subagent_lifecycle`, `subagent_progress`, `subagent_event`), gated by `set_subagent_subscription`
-12. Side-question frames (`btw_delta`, `btw_record`); see [Side questions](#side-questions-btw)
+12. Side-question frames (`btw_delta`, `btw_record`); see [Side questions](#side-questions-btw). "Ask something" frames (`ask_selection_delta`); see [Questions about a selection](#questions-about-a-selection-ask_selection)
 13. Builtin slash-command side channels (`command_output`, `session_info_update`, `config_update`); `session_info_update` also fires whenever the session title changes (auto-titling, `set_session_name`)
 14. Transport overflow notifications (`rpc_frame_error`), when an event cannot fit within the transport limits
 15. Live voice frames (`live_phase`, `live_levels`, `live_transcript`, `live_end`); see [Live Voice Sub-Protocol](#live-voice-sub-protocol)
@@ -150,6 +150,9 @@ Important edge behavior from runtime:
 - `{ id?, type: "set_plan_mode", enabled: boolean }`
 - `{ id?, type: "set_ask_dialog", enabled: boolean }`
 - `{ id?, type: "get_available_commands" }`
+- `{ id?, type: "get_skills" }`
+- `{ id?, type: "set_disabled_skills", names: string[] }`
+- `{ id?, type: "reload_skills" }`
 - `{ id?, type: "get_entries", since?: string }`
 - `{ id?, type: "get_tree" }`
 - `{ id?, type: "set_todos", phases: TodoPhase[] }`
@@ -303,8 +306,12 @@ they typed past it. Feedback tunes the engine's learned state.
 - `{ id?, type: "btw", question: string, recordId?: string }` → `data: { record: BtwHistoryRecord }`
 - `{ id?, type: "btw_cancel", recordId?: string }` → `data: { cancelled: boolean }`
 - `{ id?, type: "get_btw_history" }` → `data: { records: BtwHistoryRecord[] }`
+- `{ id?, type: "ask_selection", askId: string, selection: string, answer?: string, question: string, history?: { question, answer }[] }` → `data: { answer: string, model: string }`
+- `{ id?, type: "ask_selection_cancel", askId: string }` → `data: { cancelled: boolean }`
+- `{ id?, type: "enhance_prompt", requestId: string, draft: string, context?: { noWorkspace?, activeFile?, selection?, mentions? } }` → `data: { status, prompt, changes, ambiguities, lengthWarning, invalidReason?, model }`
+- `{ id?, type: "enhance_prompt_cancel", requestId: string }` → `data: { cancelled: boolean }`
 
-See [Side questions (`/btw`)](#side-questions-btw).
+See [Side questions (`/btw`)](#side-questions-btw), [Questions about a selection](#questions-about-a-selection-ask_selection) and [Prompt rewrite proposals](#prompt-rewrite-proposals-enhance_prompt).
 
 ## Response Schema
 
@@ -993,6 +1000,25 @@ Command discovery is intentionally an OMP dialect: Pi's `get_commands` (a
 not served because OMP's richer catalog (builtins/custom/MCP/file commands,
 broader `source` enum, no Pi `sourceInfo`) is not wire-compatible with it.
 
+### Session skills
+
+`get_skills`, `set_disabled_skills` and `reload_skills` return
+`{ skills, editable }`: every discovered skill (`name`, `description`,
+`source` as `<provider>:<level>`, `filePath`, `enabled`) and whether the
+session's skills can still be switched off.
+
+`set_disabled_skills` switches the named skills off for this session only (an
+empty list turns every skill back on): they leave the system prompt, the
+`/skill:` commands and `skill://` resolution, and subagents of the session drop
+them too. It is accepted only while the session has no message (`editable`);
+afterwards it fails with code `skills_locked`, because the model has already
+seen the prompt that lists them. The choice is recorded in the session (a
+`session_disabled_skills` custom entry), so resuming or switching to the
+session restores it; `new_session` starts with every skill on.
+
+`reload_skills` rediscovers skills and file slash commands from disk (for
+example after a skill folder was added) and rebuilds the system prompt.
+
 ### Pi-compatible history/tree commands with OMP-native entry payloads
 
 The commands and reconciliation semantics below are Pi-compatible, but the
@@ -1167,6 +1193,68 @@ shutdown the process exits anyway and reports the loss as another such notice.
 If the retry finds the topic deleted or rewritten on disk (for example by
 another process), it can never succeed: the answer is reported lost as another
 such notice and dropped, and the `btw` or session change proceeds.
+
+### Questions about a selection (`ask_selection`)
+
+`ask_selection` answers a quick question about text a host's user selected in
+an answer ("what is this?", "summarize it"). Unlike `btw` it does not use the
+session's prompt, tools or history: the request holds only `selection`, the
+optional `answer` it was selected in, earlier `history` turns (oldest first;
+the host keeps them) and `question`. Nothing is recorded in the session.
+
+It runs on the `ask` model role (`modelRoles.ask` in `config.yml`, e.g.
+`ask: driver-ia/oss-coder-pro:low`; the `:level` suffix sets its thinking).
+Unset, it uses the session's model and thinking level; a selector that matches
+no available model fails the command. On Unicaja's LiteLLM gateway
+(`driver-ia.<env>.unicajasc.corp`) the request carries `"no-log": true`, so
+the proxy keeps it out of its logging callbacks and spend logs.
+
+```json
+{ "id": "req_2", "type": "ask_selection", "askId": "a1", "selection": "debounce(fn, 200)", "question": "¿Qué es esto?" }
+{ "type": "ask_selection_delta", "askId": "a1", "delta": "Retrasa la llamada " }
+{ "id": "req_2", "type": "response", "command": "ask_selection", "success": true, "data": { "answer": "Retrasa la llamada …", "model": "driver-ia/oss-coder-pro" } }
+```
+
+Both commands bypass the command queue, so questions run beside a prompt and
+each other. The response arrives once the answer is complete; the text streams
+before it as `ask_selection_delta` frames for the client-chosen `askId`.
+`ask_selection_cancel` stops that question, whose `ask_selection` then fails;
+it answers `cancelled: false` when no question `askId` is running.
+
+### Prompt rewrite proposals (`enhance_prompt`)
+
+`enhance_prompt` proposes a clearer, better ordered rewrite of a draft the
+host's user has not sent yet. It never answers or executes the draft and never
+adds goals, steps, constraints or scope; the proposal is returned to the host,
+which decides whether to use it. One tool-less model call sees a bounded,
+static context: the last three user messages and the latest answer (truncated),
+plus — unless `context.noWorkspace` is true — the project name, branch, git
+status, manifests, context-file names and the host's `activeFile`, `selection`
+and `mentions`. Nothing is recorded in the session, and on Unicaja's LiteLLM
+gateway the request carries `"no-log": true`.
+
+It runs on the `enhance` model role (`modelRoles.enhance`, with an optional
+`:level` thinking suffix; reasoning is off otherwise); unset, a configured
+`smol` role; else the session's model. An `enhance` selector that matches no
+available model fails the command.
+
+The result's `status` is `improved` (`prompt` holds the rewrite, `changes` up
+to four short bullets), `unchanged` (the draft is already clear; `prompt`
+equals the draft) or `invalid` (`prompt` equals the draft and `invalidReason`
+says why): unparsable output, or a proposal that dropped or altered a literal
+token of the draft — fenced or inline code, a URL, an `@mention`, a leading
+`/command`, a path-like token. `ambiguities` lists what the rewrite noticed
+but left unresolved; `lengthWarning` flags a proposal longer than 2.5× the
+draft.
+
+```json
+{ "id": "req_3", "type": "enhance_prompt", "requestId": "e1", "draft": "arregla esto en @src/app.ts", "context": { "activeFile": "src/app.ts" } }
+{ "id": "req_3", "type": "response", "command": "enhance_prompt", "success": true, "data": { "status": "improved", "prompt": "Corrige el error de @src/app.ts.", "changes": ["Concreta «esto»"], "ambiguities": ["No se indica qué error"], "lengthWarning": false, "model": "driver-ia/oss-coder-pro" } }
+```
+
+Both commands bypass the command queue. `enhance_prompt_cancel` stops request
+`requestId`, whose `enhance_prompt` then fails; it answers `cancelled: false`
+when none is running.
 
 ## Prompt/Queue Concurrency and Ordering
 

@@ -3531,6 +3531,76 @@ pub struct AsyncJob {
 	pub output: Option<String>,
 }
 
+/// One skill discovered for the session.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SessionSkill {
+	/// Name the skill is invoked by (`/skill:<name>`, `skill://<name>`).
+	pub name: String,
+	pub description: String,
+	/// Where it was discovered, as `<provider>:<level>` (e.g. `native:user`, `claude:project`).
+	pub source: String,
+	/// Path of its `SKILL.md`.
+	#[serde(rename = "filePath")]
+	pub file_path: String,
+	/// False when the session switched it off.
+	pub enabled: bool,
+}
+
+/// The session's skills and whether they can still be switched off.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SessionSkills {
+	/// Every discovered skill, switched-off ones included, in discovery order.
+	pub skills: Vec<SessionSkill>,
+	/// Whether `set_disabled_skills` is accepted: true until the session has its first message.
+	pub editable: bool,
+}
+
+/// One earlier question about the same selection and its answer.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AskSelectionTurn {
+	pub question: String,
+	pub answer: String,
+}
+
+/// Editor context sent with `enhance_prompt`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EnhancePromptContext {
+	/// The chat has no workspace: no repository or editor context is used.
+	#[serde(rename = "noWorkspace", default, skip_serializing_if = "Option::is_none")]
+	pub no_workspace: Option<bool>,
+	/// Workspace-relative path of the active editor.
+	#[serde(rename = "activeFile", default, skip_serializing_if = "Option::is_none")]
+	pub active_file: Option<String>,
+	/// The active editor's selection, capped by the host to 40 lines.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub selection: Option<String>,
+	/// Paths of the draft's `@` mentions.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub mentions: Option<Vec<String>>,
+}
+
+/// `improved`: a rewrite is proposed; `unchanged`: the draft is already clear; `invalid`: the model's output was unusable or altered literal text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum EnhancePromptStatus {
+	#[serde(rename = "improved")]
+	Improved,
+	#[serde(rename = "unchanged")]
+	Unchanged,
+	#[serde(rename = "invalid")]
+	Invalid,
+}
+
+impl EnhancePromptStatus {
+	/// Wire value.
+	pub fn as_str(self) -> &'static str {
+		match self {
+			Self::Improved => "improved",
+			Self::Unchanged => "unchanged",
+			Self::Invalid => "invalid",
+		}
+	}
+}
+
 /// Side-question turn lifecycle; `interrupted` marks a turn whose process died while it ran.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum BtwStatus {
@@ -4446,6 +4516,14 @@ pub struct BtwRecordEvent {
 	pub record: BtwHistoryRecord,
 }
 
+/// Text appended to the answer of the running `ask_selection` question `askId`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AskSelectionDeltaEvent {
+	#[serde(rename = "askId")]
+	pub ask_id: String,
+	pub delta: String,
+}
+
 /// Output of a builtin slash command.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CommandOutputEvent {
@@ -5109,6 +5187,8 @@ pub enum RpcNotification {
 	BtwDelta(BtwDeltaEvent),
 	/// Full side-question record on every lifecycle change (started, complete, cancelled, error); the last one per id wins.
 	BtwRecord(BtwRecordEvent),
+	/// Text appended to the answer of the running `ask_selection` question `askId`.
+	AskSelectionDelta(AskSelectionDeltaEvent),
 	/// Output of a builtin slash command.
 	CommandOutput(CommandOutputEvent),
 	/// A builtin slash command changed the session title.
@@ -5143,6 +5223,7 @@ impl RpcNotification {
 			Some("dictation_state") => |value| serde_json::from_value(value).map(Self::DictationState),
 			Some("btw_delta") => |value| serde_json::from_value(value).map(Self::BtwDelta),
 			Some("btw_record") => |value| serde_json::from_value(value).map(Self::BtwRecord),
+			Some("ask_selection_delta") => |value| serde_json::from_value(value).map(Self::AskSelectionDelta),
 			Some("command_output") => |value| serde_json::from_value(value).map(Self::CommandOutput),
 			Some("session_info_update") => |value| serde_json::from_value(value).map(Self::SessionInfoUpdate),
 			Some("config_update") => |value| serde_json::from_value(value).map(Self::ConfigUpdate),
@@ -5173,6 +5254,7 @@ impl Serialize for RpcNotification {
 			Self::DictationState(member) => serialize_tagged(member, &[("type", "dictation_state")], serializer),
 			Self::BtwDelta(member) => serialize_tagged(member, &[("type", "btw_delta")], serializer),
 			Self::BtwRecord(member) => serialize_tagged(member, &[("type", "btw_record")], serializer),
+			Self::AskSelectionDelta(member) => serialize_tagged(member, &[("type", "ask_selection_delta")], serializer),
 			Self::CommandOutput(member) => serialize_tagged(member, &[("type", "command_output")], serializer),
 			Self::SessionInfoUpdate(member) => serialize_tagged(member, &[("type", "session_info_update")], serializer),
 			Self::ConfigUpdate(member) => serialize_tagged(member, &[("type", "config_update")], serializer),
@@ -5208,7 +5290,7 @@ impl RpcServerFrame {
 		let decode: fn(Value) -> Result<Self, serde_json::Error> = match value.get("type").and_then(Value::as_str) {
 			Some("response") => |value| serde_json::from_value(value).map(Self::Response),
 			Some("host_tool_call" | "host_tool_cancel" | "host_uri_request" | "host_uri_cancel") => |value| serde_json::from_value(value).map(Self::RpcHostRequest),
-			Some("ready" | "prompt_result" | "session_settled" | "extension_error" | "extension_ui_request" | "available_commands_update" | "subagent_lifecycle" | "subagent_progress" | "subagent_event" | "live_phase" | "live_levels" | "live_transcript" | "live_end" | "dictation_state" | "btw_delta" | "btw_record" | "command_output" | "session_info_update" | "config_update" | "rpc_frame_error" | "agent_start" | "agent_end" | "turn_start" | "turn_end" | "message_start" | "message_update" | "message_end" | "tool_execution_start" | "tool_execution_update" | "tool_stream_update" | "tool_execution_end" | "auto_compaction_start" | "auto_compaction_end" | "auto_retry_start" | "auto_retry_end" | "cache_warming_start" | "cache_warming_end" | "retry_fallback_applied" | "retry_fallback_succeeded" | "model_changed" | "config_warnings_changed" | "advisor_cost_changed" | "advisor_yielded" | "ttsr_triggered" | "todo_reminder" | "todo_auto_clear" | "irc_message" | "notice" | "thinking_level_changed" | "goal_updated" | "skill_curation" | "queue_update") => |value| serde_json::from_value(value).map(Self::RpcNotification),
+			Some("ready" | "prompt_result" | "session_settled" | "extension_error" | "extension_ui_request" | "available_commands_update" | "subagent_lifecycle" | "subagent_progress" | "subagent_event" | "live_phase" | "live_levels" | "live_transcript" | "live_end" | "dictation_state" | "btw_delta" | "btw_record" | "ask_selection_delta" | "command_output" | "session_info_update" | "config_update" | "rpc_frame_error" | "agent_start" | "agent_end" | "turn_start" | "turn_end" | "message_start" | "message_update" | "message_end" | "tool_execution_start" | "tool_execution_update" | "tool_stream_update" | "tool_execution_end" | "auto_compaction_start" | "auto_compaction_end" | "auto_retry_start" | "auto_retry_end" | "cache_warming_start" | "cache_warming_end" | "retry_fallback_applied" | "retry_fallback_succeeded" | "model_changed" | "config_warnings_changed" | "advisor_cost_changed" | "advisor_yielded" | "ttsr_triggered" | "todo_reminder" | "todo_auto_clear" | "irc_message" | "notice" | "thinking_level_changed" | "goal_updated" | "skill_curation" | "queue_update") => |value| serde_json::from_value(value).map(Self::RpcNotification),
 			_ => |value| Ok(Self::Unknown(value)),
 		};
 		decode(value)
@@ -5363,6 +5445,11 @@ pub struct SetAskDialogResult {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GetAvailableCommandsResult {
 	pub commands: Vec<AvailableSlashCommand>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SetDisabledSkillsParams {
+	pub names: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -5765,6 +5852,82 @@ pub struct BtwCancelResult {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GetBtwHistoryResult {
 	pub records: Vec<BtwHistoryRecord>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AskSelectionParams {
+	/// Client-chosen id of this question; deltas and `ask_selection_cancel` use it.
+	#[serde(rename = "askId")]
+	pub ask_id: String,
+	/// The selected excerpt.
+	pub selection: String,
+	pub question: String,
+	/// The whole answer the excerpt was selected in, sent as context.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub answer: Option<String>,
+	/// Earlier questions about the same excerpt, oldest first.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub history: Option<Vec<AskSelectionTurn>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AskSelectionResult {
+	pub answer: String,
+	/// `provider/id` of the model that answered.
+	pub model: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AskSelectionCancelParams {
+	#[serde(rename = "askId")]
+	pub ask_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AskSelectionCancelResult {
+	pub cancelled: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EnhancePromptParams {
+	/// Client-chosen id of this request; `enhance_prompt_cancel` uses it.
+	#[serde(rename = "requestId")]
+	pub request_id: String,
+	/// The composer text to rewrite.
+	pub draft: String,
+	/// Editor context that may make existing references concrete.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub context: Option<EnhancePromptContext>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EnhancePromptResult {
+	pub status: EnhancePromptStatus,
+	/// The proposed text; equals `draft` when `unchanged` or `invalid`.
+	pub prompt: String,
+	/// Up to four short bullets describing the edits, in the draft's language.
+	pub changes: Vec<String>,
+	/// Ambiguities the rewrite noticed but did not resolve, in the draft's language.
+	pub ambiguities: Vec<String>,
+	/// The proposal is more than 2.5× the draft's length.
+	#[serde(rename = "lengthWarning")]
+	pub length_warning: bool,
+	/// `provider/id` of the model that rewrote the draft.
+	pub model: String,
+	/// Why the proposal was rejected (English); set only when `status` is `invalid`.
+	#[serde(rename = "invalidReason", default, skip_serializing_if = "Option::is_none")]
+	pub invalid_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EnhancePromptCancelParams {
+	#[serde(rename = "requestId")]
+	pub request_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EnhancePromptCancelResult {
+	pub cancelled: bool,
 }
 
 /// The constant `"image"`.
@@ -6515,6 +6678,50 @@ impl Command for GetAvailableCommandsCommand {
 
 	fn decode(data: Option<Value>) -> Result<Self::Output, serde_json::Error> {
 		serde_json::from_value::<GetAvailableCommandsResult>(data.unwrap_or_else(|| Value::Object(Map::new()))).map(|result| result.commands)
+	}
+}
+
+/// List the session's skills, switched-off ones included, and whether they can still be switched off.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct GetSkillsCommand {}
+
+impl Command for GetSkillsCommand {
+	const NAME: &'static str = "get_skills";
+	const TIMEOUT_MS: Option<u64> = None;
+	type Output = SessionSkills;
+
+	fn decode(data: Option<Value>) -> Result<Self::Output, serde_json::Error> {
+		serde_json::from_value::<SessionSkills>(data.unwrap_or_else(|| Value::Object(Map::new())))
+	}
+}
+
+/// Switch the named skills off for this session only (an empty list turns every skill back on); recorded in the session so a resume keeps them off. Fails with `skills_locked` once the session has its first message. Returns the resulting skills.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SetDisabledSkillsCommand {
+	pub names: Vec<String>,
+}
+
+impl Command for SetDisabledSkillsCommand {
+	const NAME: &'static str = "set_disabled_skills";
+	const TIMEOUT_MS: Option<u64> = None;
+	type Output = SessionSkills;
+
+	fn decode(data: Option<Value>) -> Result<Self::Output, serde_json::Error> {
+		serde_json::from_value::<SessionSkills>(data.unwrap_or_else(|| Value::Object(Map::new())))
+	}
+}
+
+/// Rediscover skills and file slash commands from disk (e.g. after a skill was added), rebuild the system prompt, and return the resulting skills.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct ReloadSkillsCommand {}
+
+impl Command for ReloadSkillsCommand {
+	const NAME: &'static str = "reload_skills";
+	const TIMEOUT_MS: Option<u64> = None;
+	type Output = SessionSkills;
+
+	fn decode(data: Option<Value>) -> Result<Self::Output, serde_json::Error> {
+		serde_json::from_value::<SessionSkills>(data.unwrap_or_else(|| Value::Object(Map::new())))
 	}
 }
 
@@ -7485,5 +7692,83 @@ impl Command for GetBtwHistoryCommand {
 
 	fn decode(data: Option<Value>) -> Result<Self::Output, serde_json::Error> {
 		serde_json::from_value::<GetBtwHistoryResult>(data.unwrap_or_else(|| Value::Object(Map::new()))).map(|result| result.records)
+	}
+}
+
+/// Ask the `ask` model role (the session model when unset) about text selected in an answer, outside the session: nothing is recorded and Unicaja's LiteLLM gateway gets `"no-log": true`. The answer streams as `ask_selection_delta` frames for `askId`; the response carries it whole once complete.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AskSelectionCommand {
+	/// Client-chosen id of this question; deltas and `ask_selection_cancel` use it.
+	#[serde(rename = "askId")]
+	pub ask_id: String,
+	/// The selected excerpt.
+	pub selection: String,
+	pub question: String,
+	/// The whole answer the excerpt was selected in, sent as context.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub answer: Option<String>,
+}
+
+impl Command for AskSelectionCommand {
+	const NAME: &'static str = "ask_selection";
+	const TIMEOUT_MS: Option<u64> = Some(600000);
+	type Output = AskSelectionResult;
+
+	fn decode(data: Option<Value>) -> Result<Self::Output, serde_json::Error> {
+		serde_json::from_value::<AskSelectionResult>(data.unwrap_or_else(|| Value::Object(Map::new())))
+	}
+}
+
+/// Stop the running `ask_selection` question `askId` (it then fails); false when none matches.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AskSelectionCancelCommand {
+	#[serde(rename = "askId")]
+	pub ask_id: String,
+}
+
+impl Command for AskSelectionCancelCommand {
+	const NAME: &'static str = "ask_selection_cancel";
+	const TIMEOUT_MS: Option<u64> = None;
+	type Output = bool;
+
+	fn decode(data: Option<Value>) -> Result<Self::Output, serde_json::Error> {
+		serde_json::from_value::<AskSelectionCancelResult>(data.unwrap_or_else(|| Value::Object(Map::new()))).map(|result| result.cancelled)
+	}
+}
+
+/// Propose a clearer rewrite of a composer draft on the `enhance` model role (else `smol`, else the session model), outside the session: one tool-less call that never answers or executes the draft, records nothing, and on Unicaja's LiteLLM gateway carries `"no-log": true`. The proposal is never sent; literal tokens of the draft (code, paths, URLs, `@mentions`, a leading `/command`) must survive verbatim or the status is `invalid`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EnhancePromptCommand {
+	/// Client-chosen id of this request; `enhance_prompt_cancel` uses it.
+	#[serde(rename = "requestId")]
+	pub request_id: String,
+	/// The composer text to rewrite.
+	pub draft: String,
+}
+
+impl Command for EnhancePromptCommand {
+	const NAME: &'static str = "enhance_prompt";
+	const TIMEOUT_MS: Option<u64> = Some(120000);
+	type Output = EnhancePromptResult;
+
+	fn decode(data: Option<Value>) -> Result<Self::Output, serde_json::Error> {
+		serde_json::from_value::<EnhancePromptResult>(data.unwrap_or_else(|| Value::Object(Map::new())))
+	}
+}
+
+/// Stop the running `enhance_prompt` request `requestId` (it then fails); false when none matches.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EnhancePromptCancelCommand {
+	#[serde(rename = "requestId")]
+	pub request_id: String,
+}
+
+impl Command for EnhancePromptCancelCommand {
+	const NAME: &'static str = "enhance_prompt_cancel";
+	const TIMEOUT_MS: Option<u64> = None;
+	type Output = bool;
+
+	fn decode(data: Option<Value>) -> Result<Self::Output, serde_json::Error> {
+		serde_json::from_value::<EnhancePromptCancelResult>(data.unwrap_or_else(|| Value::Object(Map::new()))).map(|result| result.cancelled)
 	}
 }

@@ -21,7 +21,7 @@ import { ResponseCopyAction } from "./response-copy";
 import { h, iconButton } from "../dom";
 import { icon } from "../icons";
 import { setTooltip } from "../tooltip";
-import { fileLink, parseFileRef, thumbnail } from "./content";
+import { fileLink, handleMarkdownClick, thumbnail } from "./content";
 import { ExamplePrompts } from "./example-prompts";
 import { openLightbox } from "./lightbox";
 import { playFarewell, preloadFarewell } from "./logo-farewell";
@@ -436,6 +436,8 @@ export class Transcript {
 		onExample: (prompt: string) => void,
 		/** "Reply" on text selected in an answer. */
 		onReply: (text: string) => void,
+		/** "Ask something" on text selected in an answer: the selection and the answer's text. */
+		onAsk: (selection: string, answer: string) => void,
 		/** Asks for the feedback when a plan card's "Refine plan" is clicked. */
 		private readonly planFeedback: PlanFeedbackDialog,
 	) {
@@ -452,7 +454,7 @@ export class Transcript {
 		preloadFarewell();
 		this.#scroller.append(this.#empty, this.#list, this.#working);
 		this.element = h("div", { className: "transcript-wrap" }, this.#scroller, this.#pinnedRow, this.#pill);
-		this.element.append(new SelectionReply(this.#scroller, this.element, onReply).element);
+		this.element.append(new SelectionReply(this.#scroller, this.element, onReply, onAsk).element);
 		this.#pinnedPrompt.addEventListener("click", () => {
 			const mark = this.#pinnedMark;
 			if (!mark?.el.isConnected) return;
@@ -1042,15 +1044,6 @@ export class Transcript {
 			openLightbox(thumb.src);
 			return;
 		}
-		const copy = target.closest<HTMLButtonElement>(".copy-btn");
-		if (copy) {
-			const code = copy.closest(".code-block")?.querySelector("code")?.textContent ?? "";
-			void navigator.clipboard.writeText(code).then(() => {
-				copy.classList.add("copied");
-				setTimeout(() => copy.classList.remove("copied"), 1200);
-			});
-			return;
-		}
 		const changes = target.closest<HTMLElement>("[data-tool-changes]");
 		if (changes) {
 			// In a tool card's summary row the click would also toggle the card.
@@ -1058,20 +1051,6 @@ export class Transcript {
 			this.post({ type: "showToolChanges", toolCallId: changes.dataset.toolChanges!, path: changes.dataset.path! });
 			return;
 		}
-		const file = target.closest<HTMLElement>("[data-file]");
-		if (file) {
-			event.preventDefault();
-			this.post({ type: "openFile", ...parseFileRef(file.dataset.file!) });
-			return;
-		}
-		const link = target.closest<HTMLElement>("[data-href]");
-		if (link) {
-			event.preventDefault();
-			const href = link.dataset.href!;
-			if (/^https?:\/\//i.test(href)) this.post({ type: "openExternal", url: href });
-			else if (!/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("file:") || href.startsWith("local://")) {
-				if (!href.startsWith("#")) this.post({ type: "openFile", ...parseFileRef(href) });
-			}
-		}
+		handleMarkdownClick(event, target, this.post);
 	}
 }

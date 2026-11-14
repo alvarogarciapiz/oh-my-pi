@@ -79,8 +79,9 @@ export class SkillProposalStore implements vscode.Disposable {
 	/** Ask for an optional reason and decline proposal `id`; false when the user cancelled. */
 	async reject(id: string): Promise<boolean> {
 		const reason = await vscode.window.showInputBox({
-			title: "Reject skill proposal",
-			prompt: "Why? (optional — MarIA Code will not propose it again without new evidence)",
+			title: "Rechazar la mejora de la skill",
+			prompt:
+				"¿Por qué? (opcional: MarIA Code no volverá a proponerla sin nuevas evidencias). Enter para rechazar, Esc para cancelar.",
 			ignoreFocusOut: true,
 		});
 		if (reason === undefined) return false;

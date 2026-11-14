@@ -32,7 +32,7 @@ import type { CallSnapshot, CheckpointStore, RepoCheckpoint } from "../checkpoin
 import { type CallChangesResult, callChanges } from "../editor-changes/call-changes";
 import type { CommandOutputStore } from "./command-outputs";
 import { playCompletionSound } from "../sounds";
-import { displayPath, ompCommand, readConfig, workspaceCwd, workspaceRoots } from "../config";
+import { agentDir, displayPath, ompCommand, readConfig, workspaceCwd, workspaceRoots } from "../config";
 import { ensureNoWorkspaceFolder, rememberNoWorkspaceSession } from "../no-workspace";
 import { lastSystemCa } from "../system-ca";
 import { DialogBridge } from "../dialogs";
@@ -44,13 +44,14 @@ import {
 	type PlanRunView,
 	type ScopeCheckpointLevel,
 } from "../protocol";
-import { OmpCommandError, OmpProcess, type OmpResult } from "../rpc/omp-process";
+import { OmpCommandError, type OmpParams, OmpProcess, type OmpResult } from "../rpc/omp-process";
 import { AsyncJobRoster } from "./async-job-roster";
 import { PlanRunTracker } from "./plan-run";
 import { TodoListTracker } from "./todo-list";
 import { userPrompt } from "./prompt-entries";
 import { SubagentRequestLog } from "./subagent-requests";
 import { SubagentRoster } from "./subagent-roster";
+import { importSkills } from "../skills/import-skills";
 
 /** How often a followed subagent's transcript is re-read while it runs. */
 const WATCH_POLL_MS = 2000;
@@ -89,7 +90,11 @@ const NON_EVENT_FRAMES: Record<string, true> = {
 	config_update: true,
 	rpc_frame_error: true,
 	skill_curation: true,
+	ask_selection_delta: true,
 };
+
+/** A prompt rewrite is one model call without tools; longer than this and something is stuck. */
+const ENHANCE_PROMPT_TIMEOUT_MS = 120_000;
 
 /** Frames after which the session snapshot (state, stats, title) is re-read. */
 const STATE_CHANGING_EVENTS: Record<string, true> = {
@@ -242,6 +247,12 @@ export class AgentHost implements vscode.Disposable {
 	#stateReads = 0;
 	/** The folder omp runs in, as shown in the empty chat (home as `~`). */
 	#folder = "";
+	/** The folder omp runs in (absolute): imported project skills go under its `.omp/skills`. */
+	#cwd = "";
+	/** The session's skills can still be switched off (it has no message yet), as omp last reported. */
+	#skillsEditable = false;
+	/** Where the text of each running "Ask something" answer goes, by question id. */
+	readonly #askSelectionDeltas = new Map<string, (delta: string) => void>();
 	readonly #onDidChange = new vscode.EventEmitter<AgentHost>();
 	/** Fires when the process, session, title, model, busy or settled state changes. */
 	readonly onDidChange = this.#onDidChange.event;
@@ -346,6 +357,7 @@ export class AgentHost implements vscode.Disposable {
 		await this.#stopProcess();
 		const cwd = this.noWorkspace ? await ensureNoWorkspaceFolder() : workspaceCwd();
 		this.#folder = displayPath(cwd);
+		this.#cwd = cwd;
 		const command = await ompCommand(cwd);
 		if (lastSystemCa) {
 			this.log.appendLine(
@@ -659,6 +671,51 @@ export class AgentHost implements vscode.Disposable {
 		await this.#refreshJobs();
 	}
 
+	/** Switch the named skills off for the shown session only (omp refuses once it has a message). */
+	async setDisabledSkills(names: string[]): Promise<void> {
+		try {
+			this.#postSkills(await this.#requireProcess().request("set_disabled_skills", { names }));
+		} catch (error) {
+			// The webview toggled its checkboxes optimistically: bring them back to omp's state.
+			await this.refreshSkills();
+			throw error;
+		}
+	}
+
+	/**
+	 * Pick skill folders and copy them into the project's (chats with a workspace)
+	 * or the user's skills, then have omp discover them for the shown session.
+	 */
+	async importSkills(): Promise<void> {
+		const process = this.#requireProcess();
+		const imported = await importSkills(this.noWorkspace ? undefined : this.#cwd, agentDir());
+		if (imported.length === 0) return;
+		this.#postSkills(await process.request("reload_skills"));
+		this.#notice(
+			"info",
+			imported.length === 1
+				? `Skill «${imported[0]}» importada: ya está disponible en esta sesión.`
+				: `${imported.length} skills importadas (${imported.join(", ")}): ya están disponibles en esta sesión.`,
+		);
+	}
+
+	/** Re-read the session's skills and post them to `views`; an omp without the command posts nothing. */
+	async refreshSkills(views: Iterable<HostView> = this.#views): Promise<void> {
+		const process = this.process;
+		if (!process) return;
+		try {
+			const result = await process.request("get_skills");
+			if (this.#process === process) this.#postSkills(result, views);
+		} catch (error) {
+			this.log.appendLine(`[warning] get_skills failed: ${errorMessage(error)}`);
+		}
+	}
+
+	#postSkills(result: OmpResult<"get_skills">, views: Iterable<HostView> = this.#views): void {
+		this.#skillsEditable = result.editable;
+		for (const view of views) view.post({ type: "skills", skills: result.skills, editable: result.editable });
+	}
+
 	/** Follow `id`'s requests in the views (`subagentRequests`), or stop following with `null`. */
 	watchSubagent(id: string | null): void {
 		clearInterval(this.#watchTimer);
@@ -728,6 +785,44 @@ export class AgentHost implements vscode.Disposable {
 		const process = this.#process;
 		if (!process?.running) return;
 		void process.request("predict_word_feedback", { text, cursor, suggestion, accepted }).catch(() => {});
+	}
+
+	/**
+	 * "Ask something" about text selected in an answer: one question to omp's `ask` model
+	 * role, outside the session. `onDelta` gets the answer as it streams; resolves with it whole.
+	 */
+	async askSelection(
+		params: OmpParams<"ask_selection">,
+		onDelta: (delta: string) => void,
+	): Promise<OmpResult<"ask_selection">> {
+		const process = this.#process;
+		if (!process?.running) throw new Error("MarIA Code is not running");
+		this.#askSelectionDeltas.set(params.askId, onDelta);
+		try {
+			return await process.request("ask_selection", params);
+		} finally {
+			this.#askSelectionDeltas.delete(params.askId);
+		}
+	}
+
+	/** Stop a running "Ask something" question; it then ends with an error. */
+	cancelAskSelection(askId: string): void {
+		void this.#process?.request("ask_selection_cancel", { askId }).catch(() => {});
+	}
+
+	/**
+	 * "Mejorar prompt": a one-shot, tool-less rewrite of a composer draft, outside the
+	 * session; resolves with the proposal (or why there is none) whole.
+	 */
+	async enhancePrompt(params: OmpParams<"enhance_prompt">): Promise<OmpResult<"enhance_prompt">> {
+		const process = this.#process;
+		if (!process?.running) throw new Error("MarIA Code is not running");
+		return await process.request("enhance_prompt", params, ENHANCE_PROMPT_TIMEOUT_MS);
+	}
+
+	/** Stop a running "Mejorar prompt" request; it then fails. */
+	cancelEnhancePrompt(requestId: string): void {
+		void this.#process?.request("enhance_prompt_cancel", { requestId }).catch(() => {});
 	}
 
 	/**
@@ -1134,6 +1229,8 @@ export class AgentHost implements vscode.Disposable {
 		switch (frame.type) {
 			case "available_commands_update":
 				this.post({ type: "commands", commands: frame.commands });
+				// Skills changed (switched off, imported, rediscovered): their commands come and go with them.
+				void this.refreshSkills();
 				break;
 			case "command_output": {
 				this.post({ type: "commandOutput", text: frame.text });
@@ -1153,6 +1250,9 @@ export class AgentHost implements vscode.Disposable {
 				this.#setCuration(
 					frame.status === "running" ? { type: "skillCuration", status: "running" } : CURATION_IDLE,
 				);
+				break;
+			case "ask_selection_delta":
+				this.#askSelectionDeltas.get(frame.askId)?.(frame.delta);
 				break;
 			case "subagent_lifecycle":
 				this.#subagents.applyLifecycle(frame.payload);
@@ -1209,6 +1309,8 @@ export class AgentHost implements vscode.Disposable {
 			this.#soundPending = true;
 			this.#soundSuppressed = false;
 			this.#onDidChange.fire(this);
+			// The first prompt locks the session's skills.
+			if (this.#skillsEditable) void this.refreshSkills();
 		} else if (frame.type === "agent_end") {
 			this.#busy = false;
 			if (this.#views.size === 0) this.#finishedUnseen = true;
@@ -1421,6 +1523,7 @@ export class AgentHost implements vscode.Disposable {
 			this.#sendThinkingLevels(targets).catch(error => this.log.appendLine(String(error))),
 		]);
 		if (commands) send({ type: "commands", commands: commands.commands });
+		await this.refreshSkills(targets);
 		// Model discovery can take seconds; the picker fills in when it finishes.
 		void this.availableModels()
 			.then(models => send({ type: "models", models }))

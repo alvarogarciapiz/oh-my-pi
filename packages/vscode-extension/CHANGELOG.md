@@ -5,6 +5,29 @@
 ### Added
 
 - Copy an agent's complete response as Markdown from its message button, with success and retry feedback ([#4](https://github.com/javimp2003/oh-my-pi/pull/4) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
+## [0.40.0]
+
+### Added
+
+- Selecting text in an answer now shows "Ask something" next to "Reply": it opens a small chat window over the view for quick questions about the excerpt ("¿Qué es esto?", "Resúmelo"…), with streaming answers, follow-up questions and Stop/Esc. It runs outside the session (nothing is added to the chat or its history; closing the window forgets it) on the model set in `modelRoles.ask` of omp's `config.yml` (e.g. `ask: driver-ia/oss-coder-pro:low`; unset, the chat's model), and on Unicaja's LiteLLM gateway its requests carry `"no-log": true` like skill curation
+- "Mejorar prompt": a sparkles button left of the microphone rewrites your draft for clarity and structure only (same intent, language, files, code and commands; nothing added) with one tool-less model call outside the session, and shows the proposal over the composer, editable, with a word diff, what changed and what is still ambiguous: "Usar propuesta" puts it in the composer (Deshacer or Ctrl+Z brings your draft back) and "Descartar" drops it; nothing is ever sent on its own, it works while MarIA Code is busy, and Esc or the button again cancel it
+
+## [0.39.0]
+
+### Added
+
+- A skills button next to the context ring in the composer lists the skills MarIA Code has in the chat, grouped by project, user and other sources, with their descriptions, a link to each `SKILL.md` and a "Usar" button that adds `/skill:<name>` to the message. Before the first message you can switch skills off for that chat only (the others keep them, and they stay off when you reopen it) and import skill folders into the project or your user; afterwards the list shows which skills the chat has, locked. An (i) explains that typing `/` (at the start or after a space) lists the skills to reference
+
+### Changed
+
+- The saved prompts at the start of an empty chat use a wider column (up to 480px instead of 360px), so long prompts wrap onto fewer lines
+- Skill self-improvement moved from the header to the skills button: while MarIA Code reviews the skills a task used, a ring turns around the book; proposed changes show as a green count on it and at the top of its popup, with the reason, the diff inline, Aprobar / Rechazar and "Abrir en el editor", plus a "Mejora propuesta" chip on the affected skill. The header no longer shows the pencil pill, and History marks chats with pending proposals with a thin green book (no count; the tooltip says how many) that shows only while you hover the chat's row or card
+- "Mejora aplicada a la skill «…»" is a confirmation that fades out after 2 seconds instead of staying until closed
+
+### Fixed
+
+- Skill proposals written while the chat was already open (by another process, window or the CLI) now show up when you open their chat, open History or a review ends, instead of only after reloading the window
+- Hover tooltips sit right above their button every time; moving from one button (for example the microphone) to another no longer leaves a long tooltip floating higher than it should
 
 ## [0.38.0]
 

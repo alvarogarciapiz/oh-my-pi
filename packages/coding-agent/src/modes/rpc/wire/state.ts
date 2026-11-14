@@ -338,6 +338,46 @@ export const stateDefs = {
 		},
 		"One background job of the session.",
 	),
+	SessionSkill: doc(
+		{
+			name: doc("string", "Name the skill is invoked by (`/skill:<name>`, `skill://<name>`)."),
+			description: "string",
+			source: doc(
+				"string",
+				"Where it was discovered, as `<provider>:<level>` (e.g. `native:user`, `claude:project`).",
+			),
+			filePath: doc("string", "Path of its `SKILL.md`."),
+			enabled: doc("boolean", "False when the session switched it off."),
+		},
+		"One skill discovered for the session.",
+	),
+	SessionSkills: doc(
+		{
+			skills: doc("SessionSkill[]", "Every discovered skill, switched-off ones included, in discovery order."),
+			editable: doc(
+				"boolean",
+				"Whether `set_disabled_skills` is accepted: true until the session has its first message.",
+			),
+		},
+		"The session's skills and whether they can still be switched off.",
+	),
+	AskSelectionTurn: doc(
+		{ question: "string", answer: "string" },
+		"One earlier question about the same selection and its answer.",
+	),
+	EnhancePromptContext: doc(
+		{
+			"noWorkspace?": doc("boolean", "The chat has no workspace: no repository or editor context is used."),
+			"activeFile?": doc("string", "Workspace-relative path of the active editor."),
+			"selection?": doc("string", "The active editor's selection, capped by the host to 40 lines."),
+			"mentions?": doc("string[]", "Paths of the draft's `@` mentions."),
+		},
+		"Editor context sent with `enhance_prompt`.",
+	),
+	EnhancePromptStatus: doc(
+		"'improved' | 'unchanged' | 'invalid'",
+		"`improved`: a rewrite is proposed; `unchanged`: the draft is already clear; `invalid`: the model's output was unusable or altered literal text.",
+	),
 	BtwStatus: doc(
 		"'running' | 'complete' | 'cancelled' | 'error' | 'interrupted'",
 		"Side-question turn lifecycle; `interrupted` marks a turn whose process died while it ran.",

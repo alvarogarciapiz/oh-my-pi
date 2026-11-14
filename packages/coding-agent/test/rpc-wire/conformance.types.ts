@@ -26,6 +26,10 @@ import type {
 	RpcAvailableSlashCommand,
 	RpcBtwDeltaFrame,
 	RpcBtwRecordFrame,
+	RpcAskSelectionDeltaFrame,
+	RpcAskSelectionTurn,
+	RpcEnhancePromptContext,
+	RpcEnhancePromptResult,
 	RpcCommand,
 	RpcExtensionUIRequest,
 	RpcExtensionUIResponse,
@@ -55,6 +59,8 @@ import type {
 	RpcSubagentProgressFrame,
 	RpcSubagentSnapshot,
 	RpcAsyncJob,
+	RpcSessionSkill,
+	RpcSessionSkills,
 } from "@oh-my-pi/pi-coding-agent/modes/rpc/rpc-types";
 import type * as Wire from "@oh-my-pi/pi-coding-agent/modes/rpc/wire/rpc-wire.generated";
 import type { RestoredQueuedMessage } from "@oh-my-pi/pi-coding-agent/session/agent-session-types";
@@ -213,6 +219,7 @@ export type Frames = Assert<
 		liveEnd: Outbound<RpcLiveEndFrame, Wire.LiveEndEvent>;
 		btwDelta: Outbound<RpcBtwDeltaFrame, Wire.BtwDeltaEvent>;
 		btwRecord: Outbound<RpcBtwRecordFrame, Wire.BtwRecordEvent>;
+		askSelectionDelta: Outbound<RpcAskSelectionDeltaFrame, Wire.AskSelectionDeltaEvent>;
 		hostToolCall: Outbound<RpcHostToolCallRequest, Wire.HostToolCallRequest>;
 		hostToolCancel: Outbound<RpcHostToolCancelRequest, Wire.HostToolCancelRequest>;
 		hostUriRequest: Outbound<RpcHostUriRequest, Wire.HostUriRequest>;
@@ -275,8 +282,14 @@ export type State = Assert<
 		asyncJob: Outbound<RpcAsyncJob, Wire.AsyncJob>;
 		asyncJobStatuses: Same<RpcAsyncJob["status"], Wire.AsyncJobStatus>;
 		asyncJobTypes: Same<RpcAsyncJob["type"], Wire.AsyncJobType>;
+		sessionSkills: Outbound<RpcSessionSkills, Wire.SessionSkills>;
+		sessionSkill: Outbound<RpcSessionSkill, Wire.SessionSkill>;
 		btwHistoryRecord: Outbound<BtwHistoryRecord, Wire.BtwHistoryRecord>;
 		btwHistoryTurn: Outbound<BtwHistoryTurn, Wire.BtwHistoryTurn>;
+		askSelectionTurn: Inbound<Wire.AskSelectionTurn, RpcAskSelectionTurn>;
+		enhancePromptContext: Inbound<Wire.EnhancePromptContext, RpcEnhancePromptContext>;
+		enhancePromptResult: Outbound<RpcEnhancePromptResult, Wire.EnhancePromptResult>;
+		enhancePromptStatuses: Same<RpcEnhancePromptResult["status"], Wire.EnhancePromptStatus>;
 		logoutAccount: Outbound<LogoutAccount, Wire.LogoutAccount>;
 		btwStatuses: Same<BtwHistoryTurn["status"], Wire.BtwStatus>;
 		model: OutboundSubset<Model, Wire.ModelInfo>;

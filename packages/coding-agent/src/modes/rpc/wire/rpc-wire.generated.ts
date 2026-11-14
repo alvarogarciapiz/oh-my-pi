@@ -774,6 +774,48 @@ export interface AsyncJob {
 	output?: string;
 }
 
+/** One skill discovered for the session. */
+export interface SessionSkill {
+	/** Name the skill is invoked by (`/skill:<name>`, `skill://<name>`). */
+	name: string;
+	description: string;
+	/** Where it was discovered, as `<provider>:<level>` (e.g. `native:user`, `claude:project`). */
+	source: string;
+	/** Path of its `SKILL.md`. */
+	filePath: string;
+	/** False when the session switched it off. */
+	enabled: boolean;
+}
+
+/** The session's skills and whether they can still be switched off. */
+export interface SessionSkills {
+	/** Every discovered skill, switched-off ones included, in discovery order. */
+	skills: SessionSkill[];
+	/** Whether `set_disabled_skills` is accepted: true until the session has its first message. */
+	editable: boolean;
+}
+
+/** One earlier question about the same selection and its answer. */
+export interface AskSelectionTurn {
+	question: string;
+	answer: string;
+}
+
+/** Editor context sent with `enhance_prompt`. */
+export interface EnhancePromptContext {
+	/** The chat has no workspace: no repository or editor context is used. */
+	noWorkspace?: boolean;
+	/** Workspace-relative path of the active editor. */
+	activeFile?: string;
+	/** The active editor's selection, capped by the host to 40 lines. */
+	selection?: string;
+	/** Paths of the draft's `@` mentions. */
+	mentions?: string[];
+}
+
+/** `improved`: a rewrite is proposed; `unchanged`: the draft is already clear; `invalid`: the model's output was unusable or altered literal text. */
+export type EnhancePromptStatus = "improved" | "unchanged" | "invalid";
+
 /** Side-question turn lifecycle; `interrupted` marks a turn whose process died while it ran. */
 export type BtwStatus = "running" | "complete" | "cancelled" | "error" | "interrupted";
 
@@ -1239,6 +1281,13 @@ export interface BtwRecordEvent {
 	record: BtwHistoryRecord;
 }
 
+/** Text appended to the answer of the running `ask_selection` question `askId`. */
+export interface AskSelectionDeltaEvent {
+	type: "ask_selection_delta";
+	askId: string;
+	delta: string;
+}
+
 /** Output of a builtin slash command. */
 export interface CommandOutputEvent {
 	type: "command_output";
@@ -1544,7 +1593,7 @@ export interface HostUriSchemeDefinition {
 }
 
 /** Unsolicited outbound frame (everything except responses and host tool/URI requests), discriminated by `type`. */
-export type RpcNotification = ReadyEvent | PromptResultEvent | SessionSettledEvent | ExtensionError | ExtensionUiRequest | AvailableCommandsUpdateEvent | SubagentLifecycleEvent | SubagentProgressEvent | SubagentEvent | LivePhaseEvent | LiveLevelsEvent | LiveTranscriptEvent | LiveEndEvent | DictationStateEvent | BtwDeltaEvent | BtwRecordEvent | CommandOutputEvent | SessionInfoUpdateEvent | ConfigUpdateEvent | RpcFrameErrorEvent | RpcAgentEvent;
+export type RpcNotification = ReadyEvent | PromptResultEvent | SessionSettledEvent | ExtensionError | ExtensionUiRequest | AvailableCommandsUpdateEvent | SubagentLifecycleEvent | SubagentProgressEvent | SubagentEvent | LivePhaseEvent | LiveLevelsEvent | LiveTranscriptEvent | LiveEndEvent | DictationStateEvent | BtwDeltaEvent | BtwRecordEvent | AskSelectionDeltaEvent | CommandOutputEvent | SessionInfoUpdateEvent | ConfigUpdateEvent | RpcFrameErrorEvent | RpcAgentEvent;
 
 /** Any frame the server writes to stdout (after reassembling `rpc_chunk` sequences), discriminated by `type`. */
 export type RpcServerFrame = RpcResponse | RpcHostRequest | RpcNotification;
@@ -1645,6 +1694,10 @@ export interface SetAskDialogResult {
 
 export interface GetAvailableCommandsResult {
 	commands: AvailableSlashCommand[];
+}
+
+export interface SetDisabledSkillsParams {
+	names: string[];
 }
 
 export interface GetEntriesParams {
@@ -1941,6 +1994,65 @@ export interface GetBtwHistoryResult {
 	records: BtwHistoryRecord[];
 }
 
+export interface AskSelectionParams {
+	/** Client-chosen id of this question; deltas and `ask_selection_cancel` use it. */
+	askId: string;
+	/** The selected excerpt. */
+	selection: string;
+	question: string;
+	/** The whole answer the excerpt was selected in, sent as context. */
+	answer?: string;
+	/** Earlier questions about the same excerpt, oldest first. */
+	history?: AskSelectionTurn[];
+}
+
+export interface AskSelectionResult {
+	answer: string;
+	/** `provider/id` of the model that answered. */
+	model: string;
+}
+
+export interface AskSelectionCancelParams {
+	askId: string;
+}
+
+export interface AskSelectionCancelResult {
+	cancelled: boolean;
+}
+
+export interface EnhancePromptParams {
+	/** Client-chosen id of this request; `enhance_prompt_cancel` uses it. */
+	requestId: string;
+	/** The composer text to rewrite. */
+	draft: string;
+	/** Editor context that may make existing references concrete. */
+	context?: EnhancePromptContext;
+}
+
+export interface EnhancePromptResult {
+	status: EnhancePromptStatus;
+	/** The proposed text; equals `draft` when `unchanged` or `invalid`. */
+	prompt: string;
+	/** Up to four short bullets describing the edits, in the draft's language. */
+	changes: string[];
+	/** Ambiguities the rewrite noticed but did not resolve, in the draft's language. */
+	ambiguities: string[];
+	/** The proposal is more than 2.5× the draft's length. */
+	lengthWarning: boolean;
+	/** `provider/id` of the model that rewrote the draft. */
+	model: string;
+	/** Why the proposal was rejected (English); set only when `status` is `invalid`. */
+	invalidReason?: string;
+}
+
+export interface EnhancePromptCancelParams {
+	requestId: string;
+}
+
+export interface EnhancePromptCancelResult {
+	cancelled: boolean;
+}
+
 /** Every RPC command's parameters and successful response `data`. */
 export interface RpcWireCommands {
 	negotiate_protocol: { params: NegotiateProtocolParams; result: NegotiateProtocolResult };
@@ -1962,6 +2074,9 @@ export interface RpcWireCommands {
 	set_delegate_mode: { params: SetDelegateModeParams; result: SetDelegateModeResult };
 	set_ask_dialog: { params: SetAskDialogParams; result: SetAskDialogResult };
 	get_available_commands: { params: undefined; result: GetAvailableCommandsResult };
+	get_skills: { params: undefined; result: SessionSkills };
+	set_disabled_skills: { params: SetDisabledSkillsParams; result: SessionSkills };
+	reload_skills: { params: undefined; result: SessionSkills };
 	get_entries: { params: GetEntriesParams; result: SessionEntries };
 	get_tree: { params: undefined; result: SessionTree };
 	set_todos: { params: SetTodosParams; result: SetTodosResult };
@@ -2021,4 +2136,8 @@ export interface RpcWireCommands {
 	btw: { params: BtwParams; result: BtwResult };
 	btw_cancel: { params: BtwCancelParams; result: BtwCancelResult };
 	get_btw_history: { params: undefined; result: GetBtwHistoryResult };
+	ask_selection: { params: AskSelectionParams; result: AskSelectionResult };
+	ask_selection_cancel: { params: AskSelectionCancelParams; result: AskSelectionCancelResult };
+	enhance_prompt: { params: EnhancePromptParams; result: EnhancePromptResult };
+	enhance_prompt_cancel: { params: EnhancePromptCancelParams; result: EnhancePromptCancelResult };
 }

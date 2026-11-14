@@ -3410,6 +3410,84 @@ func (v *AsyncJob) decodeFrom(raw map[string]json.RawMessage) error {
 	return nil
 }
 
+// One skill discovered for the session.
+type SessionSkill struct {
+	// Name the skill is invoked by (`/skill:<name>`, `skill://<name>`).
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	// Where it was discovered, as `<provider>:<level>` (e.g. `native:user`, `claude:project`).
+	Source string `json:"source"`
+	// Path of its `SKILL.md`.
+	FilePath string `json:"filePath"`
+	// False when the session switched it off.
+	Enabled bool `json:"enabled"`
+}
+
+func (v *SessionSkill) UnmarshalJSON(data []byte) error {
+	return decodeWith(data, "SessionSkill", v.decodeFrom)
+}
+
+func (v *SessionSkill) decodeFrom(raw map[string]json.RawMessage) error {
+	var out SessionSkill
+	d := fieldDecoder{raw: raw, owner: "SessionSkill"}
+	d.required("name", &out.Name)
+	d.required("description", &out.Description)
+	d.required("source", &out.Source)
+	d.required("filePath", &out.FilePath)
+	d.required("enabled", &out.Enabled)
+	if d.err != nil {
+		return d.err
+	}
+	*v = out
+	return nil
+}
+
+// The session's skills and whether they can still be switched off.
+type SessionSkills struct {
+	// Every discovered skill, switched-off ones included, in discovery order.
+	Skills []SessionSkill `json:"skills"`
+	// Whether `set_disabled_skills` is accepted: true until the session has its first message.
+	Editable bool `json:"editable"`
+}
+
+func (v *SessionSkills) UnmarshalJSON(data []byte) error {
+	return decodeWith(data, "SessionSkills", v.decodeFrom)
+}
+
+func (v *SessionSkills) decodeFrom(raw map[string]json.RawMessage) error {
+	var out SessionSkills
+	d := fieldDecoder{raw: raw, owner: "SessionSkills"}
+	d.required("skills", &out.Skills)
+	d.required("editable", &out.Editable)
+	if d.err != nil {
+		return d.err
+	}
+	*v = out
+	return nil
+}
+
+// `improved`: a rewrite is proposed; `unchanged`: the draft is already clear; `invalid`: the model's output was unusable or altered literal text.
+type EnhancePromptStatus string
+
+const (
+	EnhancePromptStatusImproved  EnhancePromptStatus = "improved"
+	EnhancePromptStatusUnchanged EnhancePromptStatus = "unchanged"
+	EnhancePromptStatusInvalid   EnhancePromptStatus = "invalid"
+)
+
+func (v *EnhancePromptStatus) UnmarshalJSON(data []byte) error {
+	s, err := decodeString(data, "EnhancePromptStatus")
+	if err != nil {
+		return err
+	}
+	switch value := EnhancePromptStatus(s); value {
+	case EnhancePromptStatusImproved, EnhancePromptStatusUnchanged, EnhancePromptStatusInvalid:
+		*v = value
+		return nil
+	}
+	return unknownValue("EnhancePromptStatus", s)
+}
+
 // Side-question turn lifecycle; `interrupted` marks a turn whose process died while it ran.
 type BtwStatus string
 
@@ -5476,6 +5554,34 @@ func (v BtwRecordEvent) MarshalJSON() ([]byte, error) {
 	return encodeObject(plain(v), `"type":"btw_record"`, nil)
 }
 
+// Text appended to the answer of the running `ask_selection` question `askId`.
+type AskSelectionDeltaEvent struct {
+	AskID string `json:"askId"`
+	Delta string `json:"delta"`
+}
+
+func (v *AskSelectionDeltaEvent) UnmarshalJSON(data []byte) error {
+	return decodeWith(data, "AskSelectionDeltaEvent", v.decodeFrom)
+}
+
+func (v *AskSelectionDeltaEvent) decodeFrom(raw map[string]json.RawMessage) error {
+	var out AskSelectionDeltaEvent
+	d := fieldDecoder{raw: raw, owner: "AskSelectionDeltaEvent"}
+	d.constant("type", "ask_selection_delta")
+	d.required("askId", &out.AskID)
+	d.required("delta", &out.Delta)
+	if d.err != nil {
+		return d.err
+	}
+	*v = out
+	return nil
+}
+
+func (v AskSelectionDeltaEvent) MarshalJSON() ([]byte, error) {
+	type plain AskSelectionDeltaEvent
+	return encodeObject(plain(v), `"type":"ask_selection_delta"`, nil)
+}
+
 // Output of a builtin slash command.
 type CommandOutputEvent struct {
 	Text string `json:"text"`
@@ -6788,6 +6894,7 @@ func (LiveEndEvent) isRpcNotification()                 {}
 func (DictationStateEvent) isRpcNotification()          {}
 func (BtwDeltaEvent) isRpcNotification()                {}
 func (BtwRecordEvent) isRpcNotification()               {}
+func (AskSelectionDeltaEvent) isRpcNotification()       {}
 func (CommandOutputEvent) isRpcNotification()           {}
 func (SessionInfoUpdateEvent) isRpcNotification()       {}
 func (ConfigUpdateEvent) isRpcNotification()            {}
@@ -6870,6 +6977,8 @@ func (v *RpcNotification) UnmarshalJSON(data []byte) error {
 		value, err = decodeVariant[BtwDeltaEvent](raw)
 	case "btw_record":
 		value, err = decodeVariant[BtwRecordEvent](raw)
+	case "ask_selection_delta":
+		value, err = decodeVariant[AskSelectionDeltaEvent](raw)
 	case "command_output":
 		value, err = decodeVariant[CommandOutputEvent](raw)
 	case "session_info_update":
@@ -6984,6 +7093,7 @@ func (LiveEndEvent) isRpcServerFrame()                 {}
 func (DictationStateEvent) isRpcServerFrame()          {}
 func (BtwDeltaEvent) isRpcServerFrame()                {}
 func (BtwRecordEvent) isRpcServerFrame()               {}
+func (AskSelectionDeltaEvent) isRpcServerFrame()       {}
 func (CommandOutputEvent) isRpcServerFrame()           {}
 func (SessionInfoUpdateEvent) isRpcServerFrame()       {}
 func (ConfigUpdateEvent) isRpcServerFrame()            {}
@@ -7076,6 +7186,8 @@ func (v *RpcServerFrame) UnmarshalJSON(data []byte) error {
 		value, err = decodeVariant[BtwDeltaEvent](raw)
 	case "btw_record":
 		value, err = decodeVariant[BtwRecordEvent](raw)
+	case "ask_selection_delta":
+		value, err = decodeVariant[AskSelectionDeltaEvent](raw)
 	case "command_output":
 		value, err = decodeVariant[CommandOutputEvent](raw)
 	case "session_info_update":
@@ -7848,6 +7960,103 @@ func (v *GetBtwHistoryResult) decodeFrom(raw map[string]json.RawMessage) error {
 	return nil
 }
 
+type AskSelectionResult struct {
+	Answer string `json:"answer"`
+	// `provider/id` of the model that answered.
+	Model string `json:"model"`
+}
+
+func (v *AskSelectionResult) UnmarshalJSON(data []byte) error {
+	return decodeWith(data, "AskSelectionResult", v.decodeFrom)
+}
+
+func (v *AskSelectionResult) decodeFrom(raw map[string]json.RawMessage) error {
+	var out AskSelectionResult
+	d := fieldDecoder{raw: raw, owner: "AskSelectionResult"}
+	d.required("answer", &out.Answer)
+	d.required("model", &out.Model)
+	if d.err != nil {
+		return d.err
+	}
+	*v = out
+	return nil
+}
+
+type AskSelectionCancelResult struct {
+	Cancelled bool `json:"cancelled"`
+}
+
+func (v *AskSelectionCancelResult) UnmarshalJSON(data []byte) error {
+	return decodeWith(data, "AskSelectionCancelResult", v.decodeFrom)
+}
+
+func (v *AskSelectionCancelResult) decodeFrom(raw map[string]json.RawMessage) error {
+	var out AskSelectionCancelResult
+	d := fieldDecoder{raw: raw, owner: "AskSelectionCancelResult"}
+	d.required("cancelled", &out.Cancelled)
+	if d.err != nil {
+		return d.err
+	}
+	*v = out
+	return nil
+}
+
+type EnhancePromptResult struct {
+	Status EnhancePromptStatus `json:"status"`
+	// The proposed text; equals `draft` when `unchanged` or `invalid`.
+	Prompt string `json:"prompt"`
+	// Up to four short bullets describing the edits, in the draft's language.
+	Changes []string `json:"changes"`
+	// Ambiguities the rewrite noticed but did not resolve, in the draft's language.
+	Ambiguities []string `json:"ambiguities"`
+	// The proposal is more than 2.5× the draft's length.
+	LengthWarning bool `json:"lengthWarning"`
+	// `provider/id` of the model that rewrote the draft.
+	Model string `json:"model"`
+	// Why the proposal was rejected (English); set only when `status` is `invalid`.
+	InvalidReason *string `json:"invalidReason,omitempty"`
+}
+
+func (v *EnhancePromptResult) UnmarshalJSON(data []byte) error {
+	return decodeWith(data, "EnhancePromptResult", v.decodeFrom)
+}
+
+func (v *EnhancePromptResult) decodeFrom(raw map[string]json.RawMessage) error {
+	var out EnhancePromptResult
+	d := fieldDecoder{raw: raw, owner: "EnhancePromptResult"}
+	d.required("status", &out.Status)
+	d.required("prompt", &out.Prompt)
+	d.required("changes", &out.Changes)
+	d.required("ambiguities", &out.Ambiguities)
+	d.required("lengthWarning", &out.LengthWarning)
+	d.required("model", &out.Model)
+	d.optional("invalidReason", &out.InvalidReason)
+	if d.err != nil {
+		return d.err
+	}
+	*v = out
+	return nil
+}
+
+type EnhancePromptCancelResult struct {
+	Cancelled bool `json:"cancelled"`
+}
+
+func (v *EnhancePromptCancelResult) UnmarshalJSON(data []byte) error {
+	return decodeWith(data, "EnhancePromptCancelResult", v.decodeFrom)
+}
+
+func (v *EnhancePromptCancelResult) decodeFrom(raw map[string]json.RawMessage) error {
+	var out EnhancePromptCancelResult
+	d := fieldDecoder{raw: raw, owner: "EnhancePromptCancelResult"}
+	d.required("cancelled", &out.Cancelled)
+	if d.err != nil {
+		return d.err
+	}
+	*v = out
+	return nil
+}
+
 // NegotiateProtocolCommand holds the parameters of "negotiate_protocol".
 type NegotiateProtocolCommand struct {
 	ProtocolVersion int64 `json:"protocolVersion"`
@@ -8062,6 +8271,32 @@ func (c Commands) GetAvailableCommands(ctx context.Context) ([]AvailableSlashCom
 	var out GetAvailableCommandsResult
 	err := c.call(ctx, "get_available_commands", nil, 0, &out)
 	return out.Commands, err
+}
+
+// GetSkills sends "get_skills": List the session's skills, switched-off ones included, and whether they can still be switched off.
+func (c Commands) GetSkills(ctx context.Context) (SessionSkills, error) {
+	var out SessionSkills
+	err := c.call(ctx, "get_skills", nil, 0, &out)
+	return out, err
+}
+
+// SetDisabledSkillsCommand holds the parameters of "set_disabled_skills".
+type SetDisabledSkillsCommand struct {
+	Names []string `json:"names"`
+}
+
+// SetDisabledSkills sends "set_disabled_skills": Switch the named skills off for this session only (an empty list turns every skill back on); recorded in the session so a resume keeps them off. Fails with `skills_locked` once the session has its first message. Returns the resulting skills.
+func (c Commands) SetDisabledSkills(ctx context.Context, p SetDisabledSkillsCommand) (SessionSkills, error) {
+	var out SessionSkills
+	err := c.call(ctx, "set_disabled_skills", p, 0, &out)
+	return out, err
+}
+
+// ReloadSkills sends "reload_skills": Rediscover skills and file slash commands from disk (e.g. after a skill was added), rebuild the system prompt, and return the resulting skills.
+func (c Commands) ReloadSkills(ctx context.Context) (SessionSkills, error) {
+	var out SessionSkills
+	err := c.call(ctx, "reload_skills", nil, 0, &out)
+	return out, err
 }
 
 // GetEntriesCommand holds the parameters of "get_entries".
@@ -8658,4 +8893,61 @@ func (c Commands) GetBtwHistory(ctx context.Context) ([]BtwHistoryRecord, error)
 	var out GetBtwHistoryResult
 	err := c.call(ctx, "get_btw_history", nil, 0, &out)
 	return out.Records, err
+}
+
+// AskSelectionCommand holds the parameters of "ask_selection".
+type AskSelectionCommand struct {
+	// Client-chosen id of this question; deltas and `ask_selection_cancel` use it.
+	AskID string `json:"askId"`
+	// The selected excerpt.
+	Selection string `json:"selection"`
+	Question  string `json:"question"`
+	// The whole answer the excerpt was selected in, sent as context.
+	Answer *string `json:"answer,omitempty"`
+}
+
+// AskSelection sends "ask_selection": Ask the `ask` model role (the session model when unset) about text selected in an answer, outside the session: nothing is recorded and Unicaja's LiteLLM gateway gets `"no-log": true`. The answer streams as `ask_selection_delta` frames for `askId`; the response carries it whole once complete.
+func (c Commands) AskSelection(ctx context.Context, p AskSelectionCommand) (AskSelectionResult, error) {
+	var out AskSelectionResult
+	err := c.call(ctx, "ask_selection", p, 600*time.Second, &out)
+	return out, err
+}
+
+// AskSelectionCancelCommand holds the parameters of "ask_selection_cancel".
+type AskSelectionCancelCommand struct {
+	AskID string `json:"askId"`
+}
+
+// AskSelectionCancel sends "ask_selection_cancel": Stop the running `ask_selection` question `askId` (it then fails); false when none matches.
+func (c Commands) AskSelectionCancel(ctx context.Context, p AskSelectionCancelCommand) (bool, error) {
+	var out AskSelectionCancelResult
+	err := c.call(ctx, "ask_selection_cancel", p, 0, &out)
+	return out.Cancelled, err
+}
+
+// EnhancePromptCommand holds the parameters of "enhance_prompt".
+type EnhancePromptCommand struct {
+	// Client-chosen id of this request; `enhance_prompt_cancel` uses it.
+	RequestID string `json:"requestId"`
+	// The composer text to rewrite.
+	Draft string `json:"draft"`
+}
+
+// EnhancePrompt sends "enhance_prompt": Propose a clearer rewrite of a composer draft on the `enhance` model role (else `smol`, else the session model), outside the session: one tool-less call that never answers or executes the draft, records nothing, and on Unicaja's LiteLLM gateway carries `"no-log": true`. The proposal is never sent; literal tokens of the draft (code, paths, URLs, `@mentions`, a leading `/command`) must survive verbatim or the status is `invalid`.
+func (c Commands) EnhancePrompt(ctx context.Context, p EnhancePromptCommand) (EnhancePromptResult, error) {
+	var out EnhancePromptResult
+	err := c.call(ctx, "enhance_prompt", p, 120*time.Second, &out)
+	return out, err
+}
+
+// EnhancePromptCancelCommand holds the parameters of "enhance_prompt_cancel".
+type EnhancePromptCancelCommand struct {
+	RequestID string `json:"requestId"`
+}
+
+// EnhancePromptCancel sends "enhance_prompt_cancel": Stop the running `enhance_prompt` request `requestId` (it then fails); false when none matches.
+func (c Commands) EnhancePromptCancel(ctx context.Context, p EnhancePromptCancelCommand) (bool, error) {
+	var out EnhancePromptCancelResult
+	err := c.call(ctx, "enhance_prompt_cancel", p, 0, &out)
+	return out.Cancelled, err
 }

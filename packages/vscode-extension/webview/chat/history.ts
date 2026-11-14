@@ -399,17 +399,14 @@ export class HistoryPanel {
 		return [rename, remove];
 	}
 
-	/** Pill counting the skill proposals this chat's tasks produced; null without any. */
+	/** Thin book marking a chat whose tasks produced skill proposals (count in the tooltip); null without any. */
 	#curation(item: SessionListItem): HTMLElement | null {
 		if (item.proposals === 0) return null;
+		const label = `${item.proposals} skill change${item.proposals === 1 ? "" : "s"} proposed — open the chat and review ${item.proposals === 1 ? "it" : "them"} in its skills button`;
 		return h(
 			"span",
-			{
-				className: "history-curation",
-				dataset: { tooltip: `${item.proposals} skill change${item.proposals === 1 ? "" : "s"} proposed` },
-			},
-			icon("pencil"),
-			String(item.proposals),
+			{ className: "history-curation", ariaLabel: label, dataset: { tooltip: label } },
+			icon("bookOpen"),
 		);
 	}
 
