@@ -116,6 +116,10 @@ export const frameDefs = {
 		{ type: "'btw_record'", record: "BtwHistoryRecord" },
 		"Full side-question record on every lifecycle change (started, complete, cancelled, error); the last one per id wins.",
 	),
+	AskSelectionDeltaEvent: doc(
+		{ type: "'ask_selection_delta'", askId: "string", delta: "string" },
+		"Text appended to the answer of the running `ask_selection` question `askId`.",
+	),
 	CommandOutputEvent: doc({ type: "'command_output'", text: "string" }, "Output of a builtin slash command."),
 	SessionInfoUpdateEvent: doc(
 		{ type: "'session_info_update'", "title?": "string", sessionId: "string" },

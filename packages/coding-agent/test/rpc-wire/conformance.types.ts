@@ -26,6 +26,10 @@ import type {
 	RpcAvailableSlashCommand,
 	RpcBtwDeltaFrame,
 	RpcBtwRecordFrame,
+	RpcAskSelectionDeltaFrame,
+	RpcAskSelectionTurn,
+	RpcEnhancePromptContext,
+	RpcEnhancePromptResult,
 	RpcCommand,
 	RpcExtensionUIRequest,
 	RpcExtensionUIResponse,
@@ -215,6 +219,7 @@ export type Frames = Assert<
 		liveEnd: Outbound<RpcLiveEndFrame, Wire.LiveEndEvent>;
 		btwDelta: Outbound<RpcBtwDeltaFrame, Wire.BtwDeltaEvent>;
 		btwRecord: Outbound<RpcBtwRecordFrame, Wire.BtwRecordEvent>;
+		askSelectionDelta: Outbound<RpcAskSelectionDeltaFrame, Wire.AskSelectionDeltaEvent>;
 		hostToolCall: Outbound<RpcHostToolCallRequest, Wire.HostToolCallRequest>;
 		hostToolCancel: Outbound<RpcHostToolCancelRequest, Wire.HostToolCancelRequest>;
 		hostUriRequest: Outbound<RpcHostUriRequest, Wire.HostUriRequest>;
@@ -281,6 +286,10 @@ export type State = Assert<
 		sessionSkill: Outbound<RpcSessionSkill, Wire.SessionSkill>;
 		btwHistoryRecord: Outbound<BtwHistoryRecord, Wire.BtwHistoryRecord>;
 		btwHistoryTurn: Outbound<BtwHistoryTurn, Wire.BtwHistoryTurn>;
+		askSelectionTurn: Inbound<Wire.AskSelectionTurn, RpcAskSelectionTurn>;
+		enhancePromptContext: Inbound<Wire.EnhancePromptContext, RpcEnhancePromptContext>;
+		enhancePromptResult: Outbound<RpcEnhancePromptResult, Wire.EnhancePromptResult>;
+		enhancePromptStatuses: Same<RpcEnhancePromptResult["status"], Wire.EnhancePromptStatus>;
 		logoutAccount: Outbound<LogoutAccount, Wire.LogoutAccount>;
 		btwStatuses: Same<BtwHistoryTurn["status"], Wire.BtwStatus>;
 		model: OutboundSubset<Model, Wire.ModelInfo>;

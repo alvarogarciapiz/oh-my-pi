@@ -361,6 +361,23 @@ export const stateDefs = {
 		},
 		"The session's skills and whether they can still be switched off.",
 	),
+	AskSelectionTurn: doc(
+		{ question: "string", answer: "string" },
+		"One earlier question about the same selection and its answer.",
+	),
+	EnhancePromptContext: doc(
+		{
+			"noWorkspace?": doc("boolean", "The chat has no workspace: no repository or editor context is used."),
+			"activeFile?": doc("string", "Workspace-relative path of the active editor."),
+			"selection?": doc("string", "The active editor's selection, capped by the host to 40 lines."),
+			"mentions?": doc("string[]", "Paths of the draft's `@` mentions."),
+		},
+		"Editor context sent with `enhance_prompt`.",
+	),
+	EnhancePromptStatus: doc(
+		"'improved' | 'unchanged' | 'invalid'",
+		"`improved`: a rewrite is proposed; `unchanged`: the draft is already clear; `invalid`: the model's output was unusable or altered literal text.",
+	),
 	BtwStatus: doc(
 		"'running' | 'complete' | 'cancelled' | 'error' | 'interrupted'",
 		"Side-question turn lifecycle; `interrupted` marks a turn whose process died while it ran.",

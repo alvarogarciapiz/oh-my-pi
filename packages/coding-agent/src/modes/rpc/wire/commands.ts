@@ -451,4 +451,56 @@ export const rpcCommands: readonly RpcCommandSpec[] = [
 		result: { records: "BtwHistoryRecord[]" },
 		unwrap: "records",
 	},
+	{
+		name: "ask_selection",
+		doc: 'Ask the `ask` model role (the session model when unset) about text selected in an answer, outside the session: nothing is recorded and Unicaja\'s LiteLLM gateway gets `"no-log": true`. The answer streams as `ask_selection_delta` frames for `askId`; the response carries it whole once complete.',
+		params: {
+			askId: doc("string", "Client-chosen id of this question; deltas and `ask_selection_cancel` use it."),
+			selection: doc("string", "The selected excerpt."),
+			"answer?": doc("string", "The whole answer the excerpt was selected in, sent as context."),
+			question: "string",
+			"history?": doc("AskSelectionTurn[]", "Earlier questions about the same excerpt, oldest first."),
+		},
+		result: { answer: "string", model: doc("string", "`provider/id` of the model that answered.") },
+		// A long answer from a thinking model.
+		timeoutMs: 600_000,
+		clientOmit: ["history"],
+	},
+	{
+		name: "ask_selection_cancel",
+		doc: "Stop the running `ask_selection` question `askId` (it then fails); false when none matches.",
+		params: { askId: "string" },
+		result: { cancelled: "boolean" },
+		unwrap: "cancelled",
+	},
+	{
+		name: "enhance_prompt",
+		doc: 'Propose a clearer rewrite of a composer draft on the `enhance` model role (else `smol`, else the session model), outside the session: one tool-less call that never answers or executes the draft, records nothing, and on Unicaja\'s LiteLLM gateway carries `"no-log": true`. The proposal is never sent; literal tokens of the draft (code, paths, URLs, `@mentions`, a leading `/command`) must survive verbatim or the status is `invalid`.',
+		params: {
+			requestId: doc("string", "Client-chosen id of this request; `enhance_prompt_cancel` uses it."),
+			draft: doc("string", "The composer text to rewrite."),
+			"context?": doc("EnhancePromptContext", "Editor context that may make existing references concrete."),
+		},
+		result: {
+			status: "EnhancePromptStatus",
+			prompt: doc("string", "The proposed text; equals `draft` when `unchanged` or `invalid`."),
+			changes: doc("string[]", "Up to four short bullets describing the edits, in the draft's language."),
+			ambiguities: doc("string[]", "Ambiguities the rewrite noticed but did not resolve, in the draft's language."),
+			lengthWarning: doc("boolean", "The proposal is more than 2.5× the draft's length."),
+			"invalidReason?": doc(
+				"string",
+				"Why the proposal was rejected (English); set only when `status` is `invalid`.",
+			),
+			model: doc("string", "`provider/id` of the model that rewrote the draft."),
+		},
+		timeoutMs: 120_000,
+		clientOmit: ["context"],
+	},
+	{
+		name: "enhance_prompt_cancel",
+		doc: "Stop the running `enhance_prompt` request `requestId` (it then fails); false when none matches.",
+		params: { requestId: "string" },
+		result: { cancelled: "boolean" },
+		unwrap: "cancelled",
+	},
 ];

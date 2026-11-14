@@ -78,6 +78,7 @@ const notificationDefs = {
 			"DictationStateEvent",
 			"BtwDeltaEvent",
 			"BtwRecordEvent",
+			"AskSelectionDeltaEvent",
 			"CommandOutputEvent",
 			"SessionInfoUpdateEvent",
 			"ConfigUpdateEvent",

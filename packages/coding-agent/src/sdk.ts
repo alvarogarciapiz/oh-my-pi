@@ -308,6 +308,7 @@ import { ttsTool } from "./tools/tts";
 import { resolveActiveRepoContext } from "./utils/active-repo-context";
 import { EventBus } from "./utils/event-bus";
 import { normalizeProviderContextImagesForModel } from "./utils/image-loading";
+import { noLogPayload } from "./utils/litellm-no-log";
 import { formatLocalCalendarDate } from "@oh-my-pi/pi-tui/chrome/local-date";
 import { normalizePromptPath } from "./utils/prompt-path";
 import { buildNamedToolChoice } from "./utils/tool-choice";
@@ -5360,7 +5361,7 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 			model: () => resolveSkillCurationModel(settings, modelRegistry.getAvailable()),
 			customType: "skill-curation",
 			history: "none",
-			onPayload,
+			onPayload: async (payload, model, signal) => noLogPayload(await onPayload(payload, model, signal), model),
 			onResponse,
 			createAgent: createCaptureAgent,
 		});

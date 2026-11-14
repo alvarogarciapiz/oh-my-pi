@@ -4,6 +4,8 @@
 
 ### Added
 
+- Added RPC `enhance_prompt` / `enhance_prompt_cancel` ("Mejorar prompt"): one tool-less, unrecorded call proposes a faithful rewrite of a composer draft (clearer, better ordered, never wider in scope) with a change list and unresolved ambiguities, on the new `enhance` model role (unset, a configured `smol` role, else the session's model); a proposal that alters literal tokens of the draft (code, paths, URLs, `@mentions`, a leading `/command`) comes back `invalid`. On Unicaja's LiteLLM gateway these requests carry `"no-log": true`
+- Added RPC `ask_selection` / `ask_selection_cancel` with `ask_selection_delta` frames: quick questions about text selected in an answer, answered outside the session (nothing is recorded) on the new `ask` model role (`modelRoles.ask` in `config.yml`, with an optional `:level` thinking suffix; unset, the session's model). On Unicaja's LiteLLM gateway these requests carry `"no-log": true` too
 - Added RPC `get_skills`, `set_disabled_skills` and `reload_skills`: a host can list the session's skills, switch some off for that session only before its first prompt (they leave the system prompt, `/skill:` commands, `skill://` and its subagents, and stay off when the session is resumed), and rediscover skills after adding one
 - Coding conversations now start with a brief repository map in the workspace snapshot; it stays the same through compaction and is taken again for a new conversation ([#3](https://github.com/javimp2003/oh-my-pi/pull/3) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
 - Added `imageCountBudget` to custom models and `modelOverrides` in models.yml: a positive integer that replaces the provider's default per-request image budget, so a gateway with a higher limit keeps every image (upstream #15969)
@@ -52,6 +54,7 @@
 
 ### Changed
 
+- Skill curation requests sent to Unicaja's LiteLLM gateway (`driver-ia.*.unicajasc.corp`) now carry `"no-log": true`, so LiteLLM keeps them out of its logging callbacks and spend logs
 - Manual `/compact` now honors a preferred `handoff` method, reusing the live prompt prefix for its summary before falling back to soft compaction ([#3](https://github.com/javimp2003/oh-my-pi/pull/3) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
 - Messages from other agents (IRC mail) now reach the model as user turns attributed to the sending agent instead of developer-authority messages
 - Auto-QA tool-issue reporting (`dev.autoqa`) is now off by default and `dev.autoqaPush.endpoint` is empty by default, so no grievances are recorded or pushed until you enable it and configure an endpoint
@@ -88,6 +91,7 @@
 - The `bash` tool now runs on pi's own bash 5.3 engine (replacing brush) with the v18.18.9 native runtime: per-run stdio, EXIT traps, `env -i`, `timeout`/`nohup`/`git` as shell tools, and native filesystem/search performance work; the old filesystem scan cache invalidation hook is gone, and SIXEL encodes take the terminal background colour (upstream 44711a78c1 and the v18.18.9 `crates/` + `packages/natives` sync, N-45/N-46/N-47)
 ### Fixed
 
+- RPC mode now writes a new session to disk at its first prompt, so hosts listing sessions (the VS Code history) show it while the model is still thinking on its first reply
 - Fixed background (speculative) compaction sharing the live turn's provider session; it keeps its own session while still reading the live prompt cache ([#3](https://github.com/javimp2003/oh-my-pi/pull/3) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
 - Automatic handoff compaction keeps the live system prompt, including extension overrides, so generating the summary can reuse the current prompt cache ([#3](https://github.com/javimp2003/oh-my-pi/pull/3) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
 - Fixed `grep` on an explicitly named file larger than 4MB claiming only its first 4MB was searched while native grep streamed the whole file; the note now appears only for multiline patterns, which still read the leading 4MB (upstream d52fd79e4b)
