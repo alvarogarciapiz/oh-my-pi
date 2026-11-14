@@ -14,7 +14,7 @@ import * as vscode from "vscode";
 import type { SessionState } from "@oh-my-pi/pi-coding-agent/modes/rpc/wire/rpc-wire.generated";
 import { agentDir, readConfig, workspaceCwd } from "../config";
 import type { AgentStatus, ChatRequest, ChatUpdate, ModelChoice } from "../protocol";
-import { OmpCommandError, type OmpProcess } from "../rpc/omp-process";
+import { OmpCommandError, type OmpParams, type OmpProcess } from "../rpc/omp-process";
 import { renameStoredSession } from "../sessions/rename";
 import { sessionSearch } from "../sessions/session-search";
 import { guessSessionDir, listSessions, sessionLabel } from "../sessions/session-store";
@@ -64,6 +64,8 @@ export class ChatSession implements vscode.Disposable, HostView {
 	readonly #disposables: vscode.Disposable[] = [];
 	/** The composer's `@` search over the workspace. */
 	readonly #mentionSearch = new WorkspaceMentionSearch();
+	/** "Mejorar prompt" requests on their way: the host each went to, and whether the webview stopped it (its failure is then reported as cancelled). */
+	readonly #enhancements = new Map<string, { host: AgentHost; cancelled: boolean }>();
 	readonly #onDidChange = new vscode.EventEmitter<ChatSession>();
 	/** Fires when the shown session, its process, title, model, or busy state changes. */
 	readonly onDidChange = this.#onDidChange.event;
@@ -631,6 +633,52 @@ export class ChatSession implements vscode.Disposable, HostView {
 			case "predictWordFeedback":
 				this.#host?.predictWordFeedback(request.text, request.cursor, request.suggestion, request.accepted);
 				return;
+			case "askSelection": {
+				const { askId, selection, answer, question, history } = request;
+				try {
+					const result = await this.#requireHost().askSelection(
+						{ askId, selection, answer, question, history },
+						delta => this.post({ type: "askSelectionDelta", askId, delta }),
+					);
+					this.post({ type: "askSelectionDone", askId, answer: result.answer, model: result.model });
+				} catch (error) {
+					this.post({ type: "askSelectionDone", askId, error: errorMessage(error) });
+				}
+				return;
+			}
+			case "askSelectionCancel":
+				this.#host?.cancelAskSelection(request.askId);
+				return;
+			case "enhancePrompt": {
+				const { requestId, draft, mentions } = request;
+				try {
+					const host = this.#requireHost();
+					this.#enhancements.set(requestId, { host, cancelled: false });
+					const result = await host.enhancePrompt({
+						requestId,
+						draft,
+						context: enhancePromptContext(host.noWorkspace, mentions),
+					});
+					this.post({ type: "enhancePromptResult", requestId, result });
+				} catch (error) {
+					this.post({
+						type: "enhancePromptError",
+						requestId,
+						message: errorMessage(error),
+						cancelled: this.#enhancements.get(requestId)?.cancelled === true,
+					});
+				} finally {
+					this.#enhancements.delete(requestId);
+				}
+				return;
+			}
+			case "enhancePromptCancel": {
+				const running = this.#enhancements.get(request.requestId);
+				if (!running) return;
+				running.cancelled = true;
+				running.host.cancelEnhancePrompt(request.requestId);
+				return;
+			}
 			case "compact":
 				await this.compact();
 				return;
@@ -709,6 +757,25 @@ export class ChatSession implements vscode.Disposable, HostView {
 				return;
 		}
 	}
+}
+
+/** Lines of the editor selection "Mejorar prompt" sends as context. */
+const ENHANCE_SELECTION_MAX_LINES = 40;
+
+/**
+ * What "Mejorar prompt" knows besides the draft: the draft's `@` mentions and, in a chat
+ * with a workspace, the active editor's file (workspace-relative) and its selection.
+ */
+function enhancePromptContext(noWorkspace: boolean, mentions: string[]): OmpParams<"enhance_prompt">["context"] {
+	const shared = mentions.length > 0 ? { mentions } : {};
+	if (noWorkspace) return { noWorkspace: true, ...shared };
+	const editor = vscode.window.activeTextEditor;
+	if (editor?.document.uri.scheme !== "file") return shared;
+	const activeFile = vscode.workspace.asRelativePath(editor.document.uri, false);
+	const selected = editor.selection.isEmpty ? "" : editor.document.getText(editor.selection);
+	if (selected.trim() === "") return { activeFile, ...shared };
+	const selection = selected.split("\n").slice(0, ENHANCE_SELECTION_MAX_LINES).join("\n");
+	return { activeFile, selection, ...shared };
 }
 
 /**

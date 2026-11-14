@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.40.0]
+
+### Added
+
+- Selecting text in an answer now shows "Ask something" next to "Reply": it opens a small chat window over the view for quick questions about the excerpt ("¿Qué es esto?", "Resúmelo"…), with streaming answers, follow-up questions and Stop/Esc. It runs outside the session (nothing is added to the chat or its history; closing the window forgets it) on the model set in `modelRoles.ask` of omp's `config.yml` (e.g. `ask: driver-ia/oss-coder-pro:low`; unset, the chat's model), and on Unicaja's LiteLLM gateway its requests carry `"no-log": true` like skill curation
+- "Mejorar prompt": a sparkles button left of the microphone rewrites your draft for clarity and structure only (same intent, language, files, code and commands; nothing added) with one tool-less model call outside the session, and shows the proposal over the composer, editable, with a word diff, what changed and what is still ambiguous: "Usar propuesta" puts it in the composer (Deshacer or Ctrl+Z brings your draft back) and "Descartar" drops it; nothing is ever sent on its own, it works while MarIA Code is busy, and Esc or the button again cancel it
+
 ## [0.39.0]
 
 ### Added

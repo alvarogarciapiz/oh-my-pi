@@ -1,4 +1,5 @@
 /** Chat content helpers: image data URLs and clickable file references. */
+import type { ChatRequest } from "../../src/protocol";
 import { h } from "../dom";
 
 /** `data:` URL for a base64 image block. */
@@ -36,4 +37,36 @@ export function thumbnail(image: { data: string; mimeType: string }): HTMLImageE
 		tabIndex: 0,
 		dataset: { tooltip: "Preview image" },
 	});
+}
+
+/**
+ * A click in rendered markdown: a code block's copy button copies its code, file
+ * references open in the editor, web links in the browser. False when the click
+ * hit none of them.
+ */
+export function handleMarkdownClick(event: MouseEvent, target: Element, post: (request: ChatRequest) => void): boolean {
+	const copy = target.closest<HTMLButtonElement>(".copy-btn");
+	if (copy) {
+		const code = copy.closest(".code-block")?.querySelector("code")?.textContent ?? "";
+		void navigator.clipboard.writeText(code).then(() => {
+			copy.classList.add("copied");
+			setTimeout(() => copy.classList.remove("copied"), 1200);
+		});
+		return true;
+	}
+	const file = target.closest<HTMLElement>("[data-file]");
+	if (file) {
+		event.preventDefault();
+		post({ type: "openFile", ...parseFileRef(file.dataset.file!) });
+		return true;
+	}
+	const link = target.closest<HTMLElement>("[data-href]");
+	if (!link) return false;
+	event.preventDefault();
+	const href = link.dataset.href!;
+	if (/^https?:\/\//i.test(href)) post({ type: "openExternal", url: href });
+	else if (!/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("file:") || href.startsWith("local://")) {
+		if (!href.startsWith("#")) post({ type: "openFile", ...parseFileRef(href) });
+	}
+	return true;
 }

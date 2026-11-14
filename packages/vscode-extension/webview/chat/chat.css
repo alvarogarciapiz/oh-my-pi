@@ -551,10 +551,15 @@ code {
 	font-size: var(--fs-sm);
 }
 
-/* Floats at the end of text selected in an answer. */
-.selection-reply {
+/* Float at the end of text selected in an answer: "Reply" and "Ask something". */
+.selection-actions {
 	position: absolute;
 	z-index: 5;
+	display: inline-flex;
+	gap: 4px;
+}
+
+.selection-reply {
 	display: inline-flex;
 	align-items: center;
 	gap: 4px;
@@ -565,6 +570,7 @@ code {
 	background: var(--menu-bg);
 	color: var(--c-fg);
 	font-size: var(--fs-sm);
+	white-space: nowrap;
 	box-shadow: 0 2px 8px rgb(0 0 0 / 0.25);
 	cursor: pointer;
 }
@@ -3138,6 +3144,21 @@ code {
 	overflow-wrap: anywhere;
 }
 
+/* A notice's own action (Deshacer), a link-like button before its close. */
+.notice-action {
+	flex: none;
+	padding: 0 4px;
+	border: none;
+	background: none;
+	color: var(--vscode-textLink-foreground, var(--c-open));
+	font-size: var(--fs-sm);
+	line-height: 1.2;
+}
+
+.notice-action:hover {
+	text-decoration: underline;
+}
+
 .notice-close,
 .chip-remove {
 	flex: none;
@@ -3431,6 +3452,11 @@ code {
 	color: var(--vscode-input-placeholderForeground, var(--c-fg-3));
 }
 
+/* While "Mejorar prompt" works on the draft it stays visible but cannot be edited. */
+.input[readonly] {
+	opacity: 0.6;
+}
+
 /* The typed-out ideas stay on one line, so the composer never changes height while they animate. */
 .input.typewriter::placeholder {
 	white-space: nowrap;
@@ -3502,6 +3528,36 @@ code {
 .delegate-toggle[aria-pressed="true"] {
 	background: var(--c-hover);
 	color: var(--omp-accent);
+}
+
+/* "Mejorar prompt": sparkles left of the microphone; while it works the sparkles turn. */
+.enhance-prompt-toggle {
+	width: 28px;
+	height: 28px;
+	border-radius: 9999px;
+}
+
+.enhance-prompt-toggle:disabled {
+	opacity: 0.4;
+	cursor: default;
+}
+
+.enhance-prompt-toggle:disabled:hover {
+	background: none;
+}
+
+.enhance-prompt-toggle.running {
+	color: var(--omp-accent);
+}
+
+.enhance-prompt-toggle.running .icon {
+	animation: history-spin 1.2s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.enhance-prompt-toggle.running .icon {
+		animation: dictation-pulse 1.2s ease-in-out infinite;
+	}
 }
 
 /* Voice input: the microphone button, red and pulsing while recording, with the elapsed time beside it. */
@@ -4616,7 +4672,9 @@ code {
 	animation: history-spin 0.8s linear infinite;
 }
 
-.skills-proposals {
+/* The "Mejorar prompt" card above the composer shares the look of the skill proposals. */
+.skills-proposals,
+.enhance-prompt {
 	display: flex;
 	flex-direction: column;
 	gap: 6px;
@@ -4663,7 +4721,8 @@ code {
 	background: var(--menu-bg);
 }
 
-.skill-proposal.stale {
+.skill-proposal.stale,
+.enhance-prompt.stale {
 	opacity: 0.75;
 }
 
@@ -4798,6 +4857,94 @@ code {
 
 .skill-proposal-chip:hover {
 	background: color-mix(in srgb, var(--omp-accent) 22%, transparent);
+}
+
+.enhance-prompt {
+	margin-bottom: 8px;
+	font-size: var(--fs-sm);
+}
+
+.enhance-prompt-head .notice-close {
+	margin-left: auto;
+}
+
+.enhance-prompt-model {
+	min-width: 0;
+	overflow: hidden;
+	color: var(--c-fg-3);
+	font-size: calc(var(--fs) - 2px);
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.enhance-prompt-input {
+	display: block;
+	width: 100%;
+	min-height: 44px;
+	max-height: 30vh;
+	padding: 6px 8px;
+	resize: vertical;
+	border: 1px solid var(--c-border-heavy);
+	border-radius: var(--r-md);
+	background: var(--vscode-input-background, var(--c-bg));
+	color: var(--vscode-input-foreground, var(--c-fg));
+	font: inherit;
+	font-size: var(--fs);
+	line-height: 1.45;
+	overflow-y: auto;
+}
+
+.enhance-prompt-input:focus {
+	outline: none;
+	border-color: var(--omp-accent);
+}
+
+.enhance-prompt-diff {
+	max-height: 200px;
+	padding: 6px 8px;
+	overflow: auto;
+	border-radius: var(--r-sm);
+	background: var(--c-bg);
+	line-height: 1.5;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+.enhance-prompt-diff-del {
+	background: var(--vscode-diffEditor-removedTextBackground, rgb(255 0 0 / 0.2));
+	color: var(--c-fg-2);
+	text-decoration: line-through;
+}
+
+.enhance-prompt-diff-ins {
+	background: var(--vscode-diffEditor-insertedTextBackground, rgb(155 185 85 / 0.25));
+}
+
+.enhance-prompt-list {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.enhance-prompt-list-title {
+	color: var(--c-fg-2);
+	font-weight: 600;
+}
+
+.enhance-prompt-list ul {
+	margin: 0;
+	padding-left: 18px;
+	color: var(--c-fg-2);
+	line-height: 1.45;
+}
+
+.enhance-prompt-ambiguities .enhance-prompt-list-title {
+	color: var(--vscode-editorWarning-foreground, #cca700);
+}
+
+.enhance-prompt-warning {
+	margin: 0;
+	color: var(--vscode-editorWarning-foreground, #cca700);
 }
 
 /* Subagent panel: delegate mode button with a count badge and a popover listing the task's subagents. */
@@ -5527,6 +5674,197 @@ code {
 .plan-feedback .plan-card-approve:disabled {
 	opacity: 0.5;
 	cursor: default;
+}
+
+/* "Ask something" on selected answer text: a side chat over the view (webview/chat/ask-selection.ts). */
+
+.ask-selection {
+	position: fixed;
+	inset: 0;
+	z-index: 200;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 16px;
+	background: rgb(0 0 0 / 0.55);
+	animation: lightbox-in 0.12s ease-out;
+}
+
+.ask-selection-card {
+	display: flex;
+	flex-direction: column;
+	width: min(560px, 100%);
+	height: min(560px, 100%);
+	border: 1px solid var(--c-border-heavy);
+	border-radius: var(--r-xl);
+	background: var(--c-surface);
+	box-shadow: 0 8px 32px rgb(0 0 0 / 0.45);
+	overflow: hidden;
+}
+
+.ask-selection-header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 36px;
+	padding: 4px 6px 4px 12px;
+	border-bottom: 1px solid var(--c-border);
+}
+
+.ask-selection-icon .icon {
+	width: 14px;
+	height: 14px;
+	color: var(--omp-accent);
+}
+
+.ask-selection-title {
+	font-weight: 600;
+}
+
+.ask-selection-model {
+	min-width: 0;
+	color: var(--c-fg-3);
+	font-size: var(--fs-sm);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.ask-selection-spacer {
+	flex: 1;
+}
+
+.ask-selection-quote {
+	flex: none;
+	margin: 10px 12px 0;
+	padding-left: 8px;
+	border-left: 2px solid var(--omp-accent);
+	color: var(--c-fg-3);
+	font-size: var(--fs-sm);
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 4;
+	overflow: hidden;
+}
+
+.ask-selection-log {
+	flex: 1;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 10px 12px;
+	overflow-y: auto;
+}
+
+.ask-selection-question {
+	align-self: flex-end;
+	max-width: 85%;
+	padding: 6px 10px;
+	border-radius: var(--r-lg);
+	background: var(--c-user);
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+.ask-selection-pending {
+	color: var(--c-fg-3);
+}
+
+.ask-selection-error {
+	color: var(--c-error);
+	font-size: var(--fs-sm);
+}
+
+.ask-selection-suggestions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	padding: 0 12px 8px;
+}
+
+.ask-selection-suggestion {
+	height: 24px;
+	padding: 0 10px;
+	border-radius: 9999px;
+	border: 1px solid var(--c-border-heavy);
+	background: transparent;
+	color: var(--c-fg-2);
+	font-size: var(--fs-sm);
+	cursor: pointer;
+}
+
+.ask-selection-suggestion:hover {
+	background: var(--c-hover);
+	color: var(--c-fg);
+}
+
+.ask-selection-form {
+	display: flex;
+	align-items: flex-end;
+	gap: 6px;
+	margin: 0 12px;
+	padding: 6px 6px 6px 10px;
+	border: 1px solid var(--c-border-heavy);
+	border-radius: var(--r-md);
+	background: var(--c-bg);
+}
+
+.ask-selection-form:focus-within {
+	border-color: var(--omp-accent);
+}
+
+.ask-selection-input {
+	flex: 1;
+	min-height: 20px;
+	max-height: 30vh;
+	padding: 2px 0;
+	border: none;
+	background: transparent;
+	color: var(--c-fg);
+	font: inherit;
+	resize: none;
+}
+
+.ask-selection-input:focus {
+	outline: none;
+}
+
+.ask-selection-input::placeholder {
+	color: var(--vscode-input-placeholderForeground, var(--c-fg-3));
+}
+
+.ask-selection-send {
+	flex: none;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 26px;
+	height: 26px;
+	padding: 0;
+	border: none;
+	border-radius: 9999px;
+	background: var(--omp-accent);
+	color: var(--vscode-button-foreground, #fff);
+	cursor: pointer;
+}
+
+.ask-selection-send:disabled {
+	opacity: 0.4;
+	cursor: default;
+}
+
+.ask-selection-send .icon {
+	width: 14px;
+	height: 14px;
+}
+
+.ask-selection-hint {
+	padding: 6px 12px 8px;
+	color: var(--c-fg-3);
+	font-size: var(--fs-sm);
 }
 
 /* Questions from omp's ask tool, over the chat (webview/chat/ask-dialog.ts). */

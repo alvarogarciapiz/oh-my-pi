@@ -7,6 +7,7 @@ import { button, h } from "../dom";
 import { installTooltips } from "../tooltip";
 import { getVsCodeApi } from "../vscode-api";
 import { AskDialog } from "./ask-dialog";
+import { AskSelectionDialog } from "./ask-selection";
 import { Composer, type ComposerState } from "./composer";
 import { Header } from "./header";
 import { HistoryPanel } from "./history";
@@ -61,10 +62,12 @@ const composer = new Composer(
 	},
 );
 const planFeedback = new PlanFeedbackDialog(post, () => composer.cancelDictation());
+const askSelection = new AskSelectionDialog(post);
 const transcript = new Transcript(
 	post,
 	prompt => composer.fill(prompt),
 	text => composer.setQuote(text),
+	(selection, answer) => askSelection.open(selection, answer),
 	planFeedback,
 );
 
@@ -148,6 +151,8 @@ function handle(update: ChatUpdate): void {
 			break;
 		case "history":
 			askDialog.clear();
+			// The excerpt asked about belongs to the transcript being replaced.
+			askSelection.close();
 			transcript.setHistory(update.messages, update.commandOutputs);
 			composer.resetHistoryNavigation();
 			history.close();
@@ -285,6 +290,18 @@ function handle(update: ChatUpdate): void {
 			break;
 		case "wordPrediction":
 			composer.wordPrediction(update.requestId, update.suffix);
+			break;
+		case "askSelectionDelta":
+			askSelection.delta(update.askId, update.delta);
+			break;
+		case "askSelectionDone":
+			askSelection.done(update.askId, update.answer, update.model, update.error);
+			break;
+		case "enhancePromptResult":
+			composer.enhancePromptResult(update);
+			break;
+		case "enhancePromptError":
+			composer.enhancePromptError(update);
 			break;
 		case "dictationText":
 			if (askDialog.ownsDictation) askDialog.dictationText(update.text, update.submit);

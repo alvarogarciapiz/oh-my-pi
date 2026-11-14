@@ -29,6 +29,7 @@ import { CleanupOffer } from "./cleanup-offer";
 import { ContextMeter } from "./context-meter";
 import { DictationControl, type DictationState } from "./dictation";
 import { type DraftMention, expandDraftMentions, updateDraftMentions } from "./draft-mentions";
+import { EnhancePrompt } from "./enhance-prompt";
 import { GhostText, syncMirrorStyles } from "./ghost-text";
 import { openLightbox } from "./lightbox";
 import { mentionToken, replaceMention } from "./mention-token";
@@ -81,6 +82,8 @@ const PLACEHOLDER_LISTENING = "Escuchando… pulsa el micrófono para terminar, 
 const PLACEHOLDER_TRANSCRIBING = "Transcribiendo…";
 /** How long a self-dismissing notice takes to fade out; matches `.notice.fading` in chat.css. */
 const NOTICE_FADE_MS = 400;
+/** How long "Prompt actualizado" offers Deshacer after a "Mejorar prompt" proposal is used. */
+const ENHANCE_UNDO_NOTICE_MS = 8000;
 
 /** A pasted image file as an omp image block (base64 data and MIME type). */
 function readImage(file: File): Promise<ImageContent> {
@@ -95,6 +98,29 @@ function readImage(file: File): Promise<ImageContent> {
 	};
 	reader.readAsDataURL(file);
 	return promise;
+}
+
+/**
+ * `mentions` moved into `text`, a rewrite of the draft they were in: each label is looked up
+ * in order as a whole token (the rewrite leaves them literal); labels it no longer has are dropped.
+ */
+function relocateDraftMentions(text: string, mentions: readonly DraftMention[]): DraftMention[] {
+	const relocated: DraftMention[] = [];
+	let from = 0;
+	for (const entry of [...mentions].sort((a, b) => a.start - b.start)) {
+		let start = text.indexOf(entry.label, from);
+		while (
+			start !== -1 &&
+			(/[\w@./-]/.test(text[start - 1] ?? " ") || /[\w/-]/.test(text[start + entry.label.length] ?? " "))
+		) {
+			start = text.indexOf(entry.label, start + 1);
+		}
+		if (start === -1) continue;
+		const end = start + entry.label.length;
+		relocated.push({ ...entry, start, end });
+		from = end;
+	}
+	return relocated;
 }
 
 export class Composer {
@@ -166,6 +192,8 @@ export class Composer {
 	#dictationPreview = h("div", { className: "dictation-preview", hidden: true });
 	/** Grey word predictions after the caret, accepted with Tab or →. */
 	#ghost: GhostText;
+	/** "Mejorar prompt": its footer button and the proposal card above the composer. */
+	#enhance: EnhancePrompt;
 	/** Answer excerpt the next prompt replies to ("Reply" on selected text). */
 	#quote: string | undefined;
 	#quoteEl = h("div", { className: "composer-quote", hidden: true });
@@ -195,6 +223,22 @@ export class Composer {
 		this.#cleanupOffer = new CleanupOffer(post);
 		this.#dictation = new DictationControl(post, state => this.#onDictationState(state));
 		this.#ghost = new GhostText(this.#input, post);
+		this.#enhance = new EnhancePrompt(post, {
+			draft: () => this.#input.value,
+			// `@path` or `@"path with spaces"` → the path.
+			mentions: () =>
+				this.#draftMentions
+					.filter(entry => this.#input.value.slice(entry.start, entry.end) === entry.label)
+					.map(entry => entry.mention.replace(/^@(["']?)([\s\S]*)\1$/, "$2")),
+			setRunning: running => {
+				this.#input.readOnly = running;
+				if (running) this.#closePopup();
+				this.#refresh();
+			},
+			apply: text => this.#applyEnhanced(text),
+			notice: (level, message, durationMs) => this.showNotice(level, message, durationMs),
+			focus: () => this.focus(),
+		});
 		this.#thinkingToggle = iconButton("brain", "", () => {
 			this.#thinkingExpanded = !this.#thinkingExpanded;
 			this.#renderThinkingToggle();
@@ -251,6 +295,7 @@ export class Composer {
 			this.#notices,
 			this.#cleanupOffer.element,
 			this.#queue,
+			this.#enhance.card,
 			h(
 				"div",
 				{ className: "composer" },
@@ -276,6 +321,7 @@ export class Composer {
 						{ className: "composer-footer-right" },
 						this.#meter.element,
 						this.#skills.element,
+						this.#enhance.button,
 						this.#dictation.element,
 						this.#todos.element,
 						this.#asyncJobs.element,
@@ -460,12 +506,24 @@ export class Composer {
 		this.#queue.hidden = this.#queue.childElementCount === 0;
 	}
 
-	/** A banner above the composer; with `durationMs` it fades out and goes away on its own after that long. */
-	showNotice(level: NoticeLevel, message: string, durationMs?: number): void {
+	/**
+	 * A banner above the composer; with `durationMs` it fades out and goes away on its own after that long.
+	 * `action` adds a button that closes the banner and runs it.
+	 */
+	showNotice(level: NoticeLevel, message: string, durationMs?: number, action?: { label: string; run(): void }): void {
 		const notice = h("div", { className: `notice ${level}`, role: level === "error" ? "alert" : "status" });
 		const close = button("×", "notice-close", () => notice.remove());
 		setTooltip(close, "Dismiss");
-		notice.append(h("span", { className: "notice-text" }, message), close);
+		notice.append(h("span", { className: "notice-text" }, message));
+		if (action) {
+			notice.append(
+				button(action.label, "notice-action", () => {
+					notice.remove();
+					action.run();
+				}),
+			);
+		}
+		notice.append(close);
 		this.#notices.append(notice);
 		if (durationMs === undefined) return;
 		window.setTimeout(() => {
@@ -473,6 +531,40 @@ export class Composer {
 			// By timer, not `transitionend`: with reduced motion there is no transition to end.
 			window.setTimeout(() => notice.remove(), NOTICE_FADE_MS);
 		}, durationMs);
+	}
+
+	/** omp's "Mejorar prompt" proposal for a draft this composer sent. */
+	enhancePromptResult(update: Extract<ChatUpdate, { type: "enhancePromptResult" }>): void {
+		this.#enhance.result(update);
+	}
+
+	/** A "Mejorar prompt" request of this composer failed or was cancelled. */
+	enhancePromptError(update: Extract<ChatUpdate, { type: "enhancePromptError" }>): void {
+		this.#enhance.error(update);
+	}
+
+	/** Put an accepted "Mejorar prompt" proposal in place of the draft; Deshacer (or Ctrl+Z) brings the draft back. */
+	#applyEnhanced(text: string): void {
+		const draft = this.#input.value;
+		const mentions = this.#draftMentions;
+		this.#replaceDraft(text, relocateDraftMentions(text, mentions));
+		this.showNotice("info", "Prompt actualizado", ENHANCE_UNDO_NOTICE_MS, {
+			label: "Deshacer",
+			run: () => this.#replaceDraft(draft, mentions),
+		});
+	}
+
+	/** Replace the whole draft with `text`, whose compact mentions are `mentions`, and focus. */
+	#replaceDraft(text: string, mentions: DraftMention[]): void {
+		this.focus();
+		this.#input.select();
+		// `insertText` keeps the replacement on the textarea's undo stack (Ctrl+Z); its `input` event
+		// drops the mentions inside the replaced text, which are put back right after.
+		if (!document.execCommand("insertText", false, text)) this.#input.value = text;
+		this.#historyIndex = -1;
+		this.#draftMentions = mentions;
+		this.#previousDraft = text;
+		this.#onInput();
 	}
 
 	/** Insert at the cursor (replacing any selection) and focus. */
@@ -595,10 +687,12 @@ export class Composer {
 		const hasContent = this.#input.value.trim() !== "" || this.#images.length > 0;
 		this.#stop.hidden = !this.#busy;
 		this.#send.hidden = this.#busy && !hasContent;
-		this.#send.disabled = !hasContent || this.#input.disabled;
+		// While "Mejorar prompt" works on the draft it is read-only and cannot be sent.
+		this.#send.disabled = !hasContent || this.#input.disabled || this.#input.readOnly;
 		setTooltip(this.#send, this.#busy ? "Queue message (Enter)" : "Send (Enter)");
 		this.#renderPlaceholder();
-		this.#ghost.setEnabled(!this.#input.disabled && this.#dictation.state === "idle");
+		this.#ghost.setEnabled(!this.#input.disabled && !this.#input.readOnly && this.#dictation.state === "idle");
+		this.#enhance.sync(this.#input.value, !this.#input.disabled);
 	}
 
 	/** A mode's own placeholder; otherwise the default one, animated while the draft is empty. */
@@ -620,7 +714,7 @@ export class Composer {
 
 	#submit(): void {
 		const text = expandDraftMentions(this.#input.value, this.#draftMentions);
-		if ((text.trim() === "" && this.#images.length === 0) || this.#input.disabled) return;
+		if ((text.trim() === "" && this.#images.length === 0) || this.#input.disabled || this.#input.readOnly) return;
 		const command = /^\s*\/(\S+)\s*([\s\S]*)$/.exec(text);
 		const name = command?.[1];
 		const local = this.#local.get(name ?? "");
@@ -739,6 +833,12 @@ export class Composer {
 
 	#onKeyDown(event: KeyboardEvent): void {
 		if (event.isComposing || event.keyCode === 229) return;
+		// The draft is read-only while "Mejorar prompt" works on it: Esc cancels, Enter sends nothing.
+		if (this.#enhance.running) {
+			if (event.key === "Escape" || (event.key === "Enter" && !event.shiftKey)) event.preventDefault();
+			if (event.key === "Escape") this.#enhance.cancel();
+			return;
+		}
 		const popupOpen = !this.#popup.hidden;
 		if (popupOpen && this.#mentionActive) {
 			if (event.key === "Escape") {
@@ -788,6 +888,10 @@ export class Composer {
 				this.#closePopup();
 				return;
 			}
+		}
+		if (event.key === "Escape" && this.#enhance.escape()) {
+			event.preventDefault();
+			return;
 		}
 		if (this.#ghost.accept(event)) return;
 		const arrow = event.key === "ArrowUp" ? 1 : event.key === "ArrowDown" ? -1 : 0;
@@ -875,6 +979,7 @@ export class Composer {
 		if (
 			!this.#workspaceEnabled ||
 			this.#input.disabled ||
+			this.#input.readOnly ||
 			this.#dismissedFor === this.#input.value ||
 			this.#input.selectionStart !== this.#input.selectionEnd
 		) {
@@ -1003,7 +1108,7 @@ export class Composer {
 		this.#mentionPending = false;
 		this.#popup.ariaBusy = "false";
 		const token = this.#slashToken();
-		if (token === undefined || this.#input.disabled) {
+		if (token === undefined || this.#input.disabled || this.#input.readOnly) {
 			this.#closePopup();
 			return;
 		}

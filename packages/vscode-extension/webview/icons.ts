@@ -37,6 +37,7 @@ export type IconName =
 	| "plusGlobe"
 	| "copyPlus"
 	| "reply"
+	| "askBubble"
 	| "zap"
 	| "timer"
 	| "layers"
@@ -98,6 +99,8 @@ const PATHS: Record<IconName, string> = {
 	copyPlus:
 		"M15 12v6M12 15h6M10 8h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2zM4 16a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2",
 	reply: "m9 17-5-5 5-5M20 18v-2a4 4 0 0 0-4-4H4",
+	// A speech bubble with a question mark (Lucide "message-circle-question"): "Ask something" about a selection.
+	askBubble: "M7.9 20A9 9 0 1 0 4 16.1L2 22ZM9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3M12 17h.01",
 	zap: "M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z",
 	// A stopwatch: the scope checkpoint (how long MarIA Code has been working).
 	timer: "M10 2h4M12 14l3-3M20 14a8 8 0 1 1-16 0 8 8 0 0 1 16 0z",

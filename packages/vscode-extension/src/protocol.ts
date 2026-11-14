@@ -15,8 +15,10 @@ import type {
 	AgentMessage,
 	AskAnswer,
 	AskQuestion,
+	AskSelectionTurn,
 	AsyncJob,
 	AvailableSlashCommand,
+	EnhancePromptResult,
 	ImageContent,
 	RpcAgentEvent,
 	SessionState,
@@ -32,6 +34,7 @@ export type {
 	AgentMessage,
 	AskAnswer,
 	AskQuestion,
+	AskSelectionTurn,
 	AssistantMessage,
 	AsyncJob,
 	AsyncJobStatus,
@@ -39,6 +42,7 @@ export type {
 	AvailableSlashCommand,
 	BashExecutionMessage,
 	CustomMessage,
+	EnhancePromptResult,
 	ImageContent,
 	RpcAgentEvent,
 	ScopeCheckpointLevel,
@@ -320,6 +324,14 @@ export type ChatUpdate =
 	| { type: "dictation"; state: "recording" | "transcribing" | "idle"; text?: string; error?: string }
 	/** omp's answer to a `predictWord` request: the rest of the word, or null for nothing to show. */
 	| { type: "wordPrediction"; requestId: number; suffix: string | null }
+	/** Text appended to the answer of the `askSelection` question `askId`. */
+	| { type: "askSelectionDelta"; askId: string; delta: string }
+	/** The `askSelection` question `askId` ended: its whole `answer` and the model that wrote it, or `error`. */
+	| { type: "askSelectionDone"; askId: string; answer?: string; model?: string; error?: string }
+	/** omp's rewrite of the draft sent with `enhancePrompt` `requestId` (a proposal the user accepts or discards). */
+	| { type: "enhancePromptResult"; requestId: string; result: EnhancePromptResult }
+	/** The `enhancePrompt` request `requestId` failed, or was stopped (`cancelled`). */
+	| { type: "enhancePromptError"; requestId: string; message: string; cancelled?: boolean }
 	/** "Find in Chat" (Ctrl+F while the chat has focus): open the find bar. */
 	| { type: "openFind" }
 	/** A finished dictation: insert `text` at the cursor, and send it when `submit`. */
@@ -457,6 +469,27 @@ export type ChatRequest =
 	| { type: "predictWord"; requestId: number; text: string; cursor: number }
 	/** A shown prediction was accepted (Tab/→) or typed past, for the engine to learn from. */
 	| { type: "predictWordFeedback"; text: string; cursor: number; suggestion: string; accepted: boolean }
+	/**
+	 * "Ask something" about `selection`, text selected in `answer`: one question in a small
+	 * chat outside the session, on omp's `ask` model role. Streams `askSelectionDelta`, ends with `askSelectionDone`.
+	 */
+	| {
+			type: "askSelection";
+			askId: string;
+			selection: string;
+			answer?: string;
+			question: string;
+			history: AskSelectionTurn[];
+	  }
+	/** Stop the `askSelection` question `askId`. */
+	| { type: "askSelectionCancel"; askId: string }
+	/**
+	 * "Mejorar prompt": a one-shot, tool-less rewrite of the composer's `draft` (clearer, same intent),
+	 * answered by `enhancePromptResult` or `enhancePromptError`. `mentions` are the paths of its `@` mentions.
+	 */
+	| { type: "enhancePrompt"; requestId: string; draft: string; mentions: string[] }
+	/** Stop the `enhancePrompt` request `requestId`; it then ends with a cancelled `enhancePromptError`. */
+	| { type: "enhancePromptCancel"; requestId: string }
 	/** Keyboard focus entered or left the webview (drives the Ctrl+F keybinding's context). */
 	| { type: "focusChanged"; focused: boolean }
 	/** Keep `prompts` as the empty chat's prompts for every chat, or go back to the defaults with `null`; every chat gets `examplePrompts`. */

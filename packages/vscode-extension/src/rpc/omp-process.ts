@@ -17,6 +17,7 @@ import type {
 
 export type OmpCommandName = keyof RpcWireCommands;
 export type OmpResult<K extends OmpCommandName> = RpcWireCommands[K]["result"];
+export type OmpParams<K extends OmpCommandName> = RpcWireCommands[K]["params"];
 /** A command's params (omitted for parameterless commands), then an optional timeout override. */
 type RequestArgs<K extends OmpCommandName> = RpcWireCommands[K]["params"] extends undefined
 	? [params?: undefined, timeoutMs?: number]
@@ -69,6 +70,7 @@ const UNBOUNDED_COMMANDS: Record<string, true> = {
 	get_available_models: true,
 	set_model: true,
 	dictation_start: true,
+	ask_selection: true,
 };
 const DEFAULT_TIMEOUT_MS = 30_000;
 /** Matches the server's advertised `maxReassembledFrameBytes`. */

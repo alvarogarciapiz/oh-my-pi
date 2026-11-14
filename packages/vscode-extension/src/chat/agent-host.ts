@@ -44,7 +44,7 @@ import {
 	type PlanRunView,
 	type ScopeCheckpointLevel,
 } from "../protocol";
-import { OmpCommandError, OmpProcess, type OmpResult } from "../rpc/omp-process";
+import { OmpCommandError, type OmpParams, OmpProcess, type OmpResult } from "../rpc/omp-process";
 import { AsyncJobRoster } from "./async-job-roster";
 import { PlanRunTracker } from "./plan-run";
 import { TodoListTracker } from "./todo-list";
@@ -90,7 +90,11 @@ const NON_EVENT_FRAMES: Record<string, true> = {
 	config_update: true,
 	rpc_frame_error: true,
 	skill_curation: true,
+	ask_selection_delta: true,
 };
+
+/** A prompt rewrite is one model call without tools; longer than this and something is stuck. */
+const ENHANCE_PROMPT_TIMEOUT_MS = 120_000;
 
 /** Frames after which the session snapshot (state, stats, title) is re-read. */
 const STATE_CHANGING_EVENTS: Record<string, true> = {
@@ -247,6 +251,8 @@ export class AgentHost implements vscode.Disposable {
 	#cwd = "";
 	/** The session's skills can still be switched off (it has no message yet), as omp last reported. */
 	#skillsEditable = false;
+	/** Where the text of each running "Ask something" answer goes, by question id. */
+	readonly #askSelectionDeltas = new Map<string, (delta: string) => void>();
 	readonly #onDidChange = new vscode.EventEmitter<AgentHost>();
 	/** Fires when the process, session, title, model, busy or settled state changes. */
 	readonly onDidChange = this.#onDidChange.event;
@@ -782,6 +788,44 @@ export class AgentHost implements vscode.Disposable {
 	}
 
 	/**
+	 * "Ask something" about text selected in an answer: one question to omp's `ask` model
+	 * role, outside the session. `onDelta` gets the answer as it streams; resolves with it whole.
+	 */
+	async askSelection(
+		params: OmpParams<"ask_selection">,
+		onDelta: (delta: string) => void,
+	): Promise<OmpResult<"ask_selection">> {
+		const process = this.#process;
+		if (!process?.running) throw new Error("MarIA Code is not running");
+		this.#askSelectionDeltas.set(params.askId, onDelta);
+		try {
+			return await process.request("ask_selection", params);
+		} finally {
+			this.#askSelectionDeltas.delete(params.askId);
+		}
+	}
+
+	/** Stop a running "Ask something" question; it then ends with an error. */
+	cancelAskSelection(askId: string): void {
+		void this.#process?.request("ask_selection_cancel", { askId }).catch(() => {});
+	}
+
+	/**
+	 * "Mejorar prompt": a one-shot, tool-less rewrite of a composer draft, outside the
+	 * session; resolves with the proposal (or why there is none) whole.
+	 */
+	async enhancePrompt(params: OmpParams<"enhance_prompt">): Promise<OmpResult<"enhance_prompt">> {
+		const process = this.#process;
+		if (!process?.running) throw new Error("MarIA Code is not running");
+		return await process.request("enhance_prompt", params, ENHANCE_PROMPT_TIMEOUT_MS);
+	}
+
+	/** Stop a running "Mejorar prompt" request; it then fails. */
+	cancelEnhancePrompt(requestId: string): void {
+		void this.#process?.request("enhance_prompt_cancel", { requestId }).catch(() => {});
+	}
+
+	/**
 	 * Answer a plan review shown in a view. Refinement `feedback` is queued as
 	 * steering before the answer: the `xd://propose` call is still waiting on it,
 	 * so the feedback lands right after its "refinement requested" result.
@@ -1206,6 +1250,9 @@ export class AgentHost implements vscode.Disposable {
 				this.#setCuration(
 					frame.status === "running" ? { type: "skillCuration", status: "running" } : CURATION_IDLE,
 				);
+				break;
+			case "ask_selection_delta":
+				this.#askSelectionDeltas.get(frame.askId)?.(frame.delta);
 				break;
 			case "subagent_lifecycle":
 				this.#subagents.applyLifecycle(frame.payload);
